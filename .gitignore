@@ -1,0 +1,19 @@
+.gradle/
+.kotlin/
+build/
+local.properties
+*.iml
+.idea/
+.DS_Store
+prototype/out/
+# 签名材料与本地配置（绝不入库）
+keystore.properties
+*.jks
+*.keystore
+dist/*.apk
+# 生成物（本地复现用，不入库）
+testdata/out/
+testdata/out2/
+testdata/tmp/
+*.log
+*.idsig

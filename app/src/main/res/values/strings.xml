@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">图读</string>
+
+    <string name="home_title">图读</string>
+    <string name="home_tagline">把长图读成书：小屏幕上的重排阅读</string>
+    <string name="home_description">把字很小的长图分享到图读，按行左右对半切开再插回去，字号放大一倍。不识别文字、不联网、图片不离开这台设备。</string>
+    <string name="home_pick">选择图片</string>
+    <string name="home_privacy">本应用没有联网权限，图片不会离开这台设备。</string>
+    <string name="home_share_hint">在其他 APP 里试试分享图片到图读。</string>
+
+    <string name="loading_reading">正在读取图片…</string>
+    <string name="loading_analyzing">正在分析版式…</string>
+    <string name="loading_page">正在处理…</string>
+
+    <string name="error_unreadable">这张图打不开</string>
+    <string name="error_unsupported">这张图的格式暂不支持</string>
+    <string name="error_decode">图片解码失败</string>
+    <string name="error_internal">出现了内部错误</string>
+    <string name="error_retry">重试</string>
+    <string name="error_back">返回</string>
+    <string name="error_detail_unreadable">文件可能已被移动或来源 App 已关闭。</string>
+    <string name="error_detail_unsupported">HEIF 图片需要 Android 9 及以上系统。</string>
+    <string name="error_detail_decode">图片可能损坏，或尺寸超出可用内存。</string>
+    <string name="error_detail_internal">可以返回后重试；如果反复出现，请反馈日志。</string>
+
+    <string name="fallback_no_text">这张图里没找到可重排的文字，已显示原图</string>
+    <string name="fallback_gain">文字已经足够大，不需要重排</string>
+    <string name="fallback_weak">已整页放大，但没有找到可切分的位置</string>
+    <string name="fallback_weak_original">这一页没有找到可放大的切分位置，已显示原图，可双指放大</string>
+    <string name="fallback_multi_column">检测到多栏版面，重排会串行，建议看原图</string>
+    <string name="banner_view_original">查看原图</string>
+    <string name="banner_dismiss">知道了</string>
+    <string name="fallback_few_lines">可切分的文字行太少，已显示原图</string>
+    <string name="fallback_too_tall">重排结果过长，已显示原图</string>
+    <string name="fallback_no_ink">这张图里没有可读内容，已显示原图</string>
+
+    <string name="mode_reflow">重排</string>
+    <string name="mode_original">原图</string>
+    <string name="back">返回</string>
+    <string name="more">更多</string>
+    <string name="page_indicator">%1$d / %2$d</string>
+    <string name="figure_dialog_title">图块 · 点击外部关闭</string>
+    <string name="figure_content_description">图块，点按查看大图</string>
+    <string name="close">关闭</string>
+    <string name="figure_open">查看大图</string>
+
+    <string name="settings">设置</string>
+    <string name="settings_font_size">字号</string>
+    <string name="settings_font_small">小</string>
+    <string name="settings_font_standard">标准</string>
+    <string name="settings_font_large">大</string>
+    <string name="settings_split">切分方式</string>
+    <string name="settings_split_auto">自动</string>
+    <string name="settings_split_twocol">左右对半</string>
+    <string name="settings_split_off">关闭</string>
+    <string name="settings_remember">阅读位置</string>
+    <string name="settings_remember_on">记住</string>
+    <string name="settings_remember_off">不记住</string>
+    <string name="settings_privacy">本应用没有联网权限，图片不会离开这台设备。</string>
+
+    <string name="level_original">原图</string>
+    <string name="level_x2">×2</string>
+    <string name="level_x4">×4</string>
+    <string name="split_chip_auto">切分 自动</string>
+    <string name="split_chip_twocol">切分 双栏</string>
+    <string name="split_chip_off">切分 关闭</string>
+    <string name="font_size_button">字号设置</string>
+    <string name="progress_percent">%1$d%%</string>
+
+    <string name="about">关于</string>
+    <string name="about_title">关于图读</string>
+    <string name="about_version">版本 %1$s</string>
+    <string name="about_body">图读只做一件事：把图片当版面，按文字行左右对半切开再按行插回，让长图在小屏幕上更容易读。\n\n不 OCR、不联网、不上模型，所有处理都在本机完成。图片只保存在应用缓存目录，7 天后自动清理。\n\n正文是图片，TalkBack 读不出文字内容，这是方案本身的限制。</string>
+
+    <string name="toast_max_images">最多一次读 5 张</string>
+    <string name="toast_no_image">没有收到图片</string>
+    <string name="toast_open_failed">图片打不开</string>
+    <string name="toast_image_cleaned">图片已清理</string>
+
+    <string name="cd_image_content">重排后的阅读内容</string>
+    <string name="cd_original_image">原图</string>
+    <string name="cd_toggle_bars">显示或隐藏工具栏</string>
+    <string name="empty_page">这一页没有内容</string>
+</resources>
