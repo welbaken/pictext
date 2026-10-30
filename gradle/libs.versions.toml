@@ -33,6 +33,7 @@ androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTes
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTest" }
 espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "espresso" }
 onnxruntime-desktop = { module = "com.microsoft.onnxruntime:onnxruntime", version.ref = "onnxruntime" }
+onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntime" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

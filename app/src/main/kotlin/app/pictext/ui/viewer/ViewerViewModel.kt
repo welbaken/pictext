@@ -6,12 +6,12 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.pictext.PicTextApp
-import app.pictext.core.analyze.LayoutAnalyzer
 import app.pictext.core.model.FallbackReason
 import app.pictext.core.model.PlanMode
 import app.pictext.core.model.ReflowPlan
 import app.pictext.core.plan.ReflowOptions
 import app.pictext.core.plan.ReflowPlanner
+import app.pictext.core.plan.SmartReflow
 import app.pictext.data.AppSettings
 import app.pictext.data.SplitMode
 import app.pictext.image.BitmapDecoder
@@ -19,6 +19,8 @@ import app.pictext.image.DecodeException
 import app.pictext.image.FailureKind
 import app.pictext.image.SourceImage
 import app.pictext.image.SourceStripCache
+import app.pictext.layout.AndroidTileSampler
+import app.pictext.core.layout.PageContext
 import app.pictext.render.TileRenderer
 import app.pictext.session.DocumentSession
 import kotlinx.coroutines.CancellationException
@@ -77,7 +79,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             container.settings.settings.collect { newSettings ->
                 val old = settings
                 settings = newSettings
-                if (old.targetSp != newSettings.targetSp ||
+                if (old.smartLayout != newSettings.smartLayout) {
+                    // 版式开关改变的是“分析结果”本身，不能只重新规划（docs/07 §4.10）。
+                    reanalyzeAll()
+                } else if (old.targetSp != newSettings.targetSp ||
                     old.splitMode != newSettings.splitMode
                 ) {
                     replanAll()
@@ -228,6 +233,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { runCatching { container.settings.setRememberProgress(remember) } }
     }
 
+    /** 打开/关闭 v2 版式识别（β）。改的是分析链路，会重跑当前页与下一页。 */
+    fun setSmartLayout(enabled: Boolean) {
+        viewModelScope.launch { runCatching { container.settings.setSmartLayout(enabled) } }
+    }
+
+    /** 当前是否已启用 v2（设置项 + 模型可用性都要满足才真正生效）。 */
+    fun smartLayoutEnabled(): Boolean = settings.smartLayout && container.layoutModelReady()
+
     fun setBarsVisible(visible: Boolean) {
         val ready = _state.value as? ViewerUiState.Ready ?: return
         if (ready.showBars == visible) return
@@ -342,13 +355,31 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         val file = entry.file ?: throw DecodeException(FailureKind.UNREADABLE, "no file")
         val started = System.nanoTime()
         val decoded = BitmapDecoder.decodeForAnalysis(file)
-        // 分析期会把 ×4 二次重排要用的候选字缝一并算好（每条正文行的所有安全切点）：
-        // 用户在阅读页随时可能点 ×4，而分析只做一次；这点开销是一次线性扫描，远小于二值化。
-        val layout = LayoutAnalyzer().analyze(decoded.gray, decoded.srcWidth, decoded.srcHeight)
         val source = SourceImage(file)
-        val analysisMs = (System.nanoTime() - started) / 1_000_000
         val opts = options()
-        val plan = planner.plan(layout, opts)
+
+        // v2：模型区域 + 阅读顺序；模型不可用 / 审计失败 / 竖排都会自动回退到 v1，
+        // 回退是无感的（docs/07 §4.9），所以这里不需要 try/catch 兜底模型异常。
+        val detector = if (settings.smartLayout) container.layoutDetector() else null
+        val sampler = if (detector != null) AndroidTileSampler(source) else null
+        val bg = decoded.gray.backgroundColor
+        val smart = SmartReflow().run(
+            analysis = decoded.gray,
+            page = PageContext(
+                srcWidth = decoded.srcWidth,
+                srcHeight = decoded.srcHeight,
+                backgroundColor = bg,
+                isDark = luminance(bg) < 110,
+            ),
+            planOptions = opts,
+            sampler = sampler,
+            regionSampler = sampler,
+            detector = detector,
+        )
+        val layout = smart.layout
+        val plan = smart.plan
+        val analysisMs = (System.nanoTime() - started) / 1_000_000
+
         // 分享进入的第一页：按自动判断的结果决定初始档位（原图 or ×2），之后才由用户手动切换。
         if (autoLevel && index == 0) {
             autoLevel = false
@@ -359,9 +390,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         Log.d(
             "PicText",
             "page=$index src=${decoded.srcWidth}x${decoded.srcHeight} analysis=${analysisMs}ms " +
-                "lines=${layout.textLines().size} figures=${layout.blocks.count { it is app.pictext.core.model.Block.Figure }} " +
+                "strategy=${layout.strategy} v2=${smart.fallbackCode ?: "none"} " +
+                "regions=${layout.regions.size} lines=${layout.regionLines().size} " +
+                "figures=${layout.blocks.count { it is app.pictext.core.model.Block.Figure }} " +
                 "split=${layout.splitX} clean=${layout.cleanRatio} scale=${plan.scale} gain=${plan.gain} " +
-                "mode=${plan.mode} fallback=${plan.fallback} notes=${plan.notes}",
+                "mode=${plan.mode} fallback=${plan.fallback} " +
+                "auditV2=${smart.layoutAudit?.ok} stages=${smart.layoutStats?.summary?.stageSummary()} " +
+                "notes=${plan.notes}",
         )
         return DocumentSession(
             key = entry.key,
@@ -372,6 +407,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             plan = plan,
             renderer = renderer,
         ).also { it.multiplier = opts.scaleMultiplier }
+    }
+
+    private fun luminance(argb: Int): Int {
+        val r = (argb ushr 16) and 0xFF
+        val g = (argb ushr 8) and 0xFF
+        val b = argb and 0xFF
+        return (77 * r + 150 * g + 29 * b) shr 8
     }
 
     /**
@@ -402,6 +444,27 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             // maxScale × scaleMultiplier ≤ 6。
             maxScale = 3f,
         )
+    }
+
+    /**
+     * 丢弃现有分析结果，重跑当前页与下一页。
+     *
+     * v2 开关变的是**分析**（区域/顺序），不是规划参数，所以不能走 [replanAll]。
+     * 只重跑当前页与预取页：用户翻到别的页时 [ensureProcessed] 会补上。
+     */
+    private fun reanalyzeAll() {
+        cancelAllJobs()
+        closeSessions()
+        sessions = MutableList(entries.size) { null }
+        for (i in pages.indices) {
+            if (entries.getOrNull(i)?.failure == null) {
+                pages[i] = pages[i].copy(loading = true, failure = null, plan = null)
+            }
+        }
+        publish()
+        val current = (_state.value as? ViewerUiState.Ready)?.current ?: 0
+        ensureProcessed(current)
+        ensureProcessed(current + 1)
     }
 
     private fun replanAll() {
@@ -435,8 +498,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         if (changed) publish()
     }
 
-    private fun updateReadySettings() {
-        val ready = _state.value as? ViewerUiState.Ready ?: return
+    private fun updateReadySettings() {        val ready = _state.value as? ViewerUiState.Ready ?: return
         _state.value = ready.copy(settings = settings, viewportWidth = viewportWidth)
     }
 

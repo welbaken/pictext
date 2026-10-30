@@ -20,6 +20,13 @@ data class AppSettings(
     val targetSp: Float = 16f,
     val splitMode: SplitMode = SplitMode.AUTO,
     val rememberProgress: Boolean = true,
+    /**
+     * v2 版式识别（模型区域 + 阅读顺序）开关。
+     *
+     * v2.0 默认**关**（β，docs/07 §4.10 / 决策 D-V2-3）：模型在手机截图上的零样本召回还没有
+     * 达到可以默认开的把握，先让愿意试的人打开；模型不可用时打开也只会静默走 v1。
+     */
+    val smartLayout: Boolean = false,
 )
 
 private val Context.settingsDataStore by preferencesDataStore(name = "settings")
@@ -31,6 +38,7 @@ class SettingsRepository(private val context: Context) {
         val targetSp = floatPreferencesKey("target_sp")
         val splitMode = stringPreferencesKey("split_mode")
         val rememberProgress = booleanPreferencesKey("remember_progress")
+        val smartLayout = booleanPreferencesKey("smart_layout")
     }
 
     val settings: Flow<AppSettings> = context.settingsDataStore.data
@@ -44,6 +52,7 @@ class SettingsRepository(private val context: Context) {
                     SplitMode.valueOf(prefs[Keys.splitMode] ?: SplitMode.AUTO.name)
                 }.getOrDefault(SplitMode.AUTO),
                 rememberProgress = prefs[Keys.rememberProgress] ?: true,
+                smartLayout = prefs[Keys.smartLayout] ?: false,
             )
         }
 
@@ -57,5 +66,9 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setRememberProgress(remember: Boolean) {
         context.settingsDataStore.edit { it[Keys.rememberProgress] = remember }
+    }
+
+    suspend fun setSmartLayout(enabled: Boolean) {
+        context.settingsDataStore.edit { it[Keys.smartLayout] = enabled }
     }
 }

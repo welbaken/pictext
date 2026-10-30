@@ -36,6 +36,9 @@ fun ViewerTopBar(
     visible: Boolean,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /** v2 版式识别（β）是否开启；`null` 表示这一版不显示这个开关。 */
+    smartLayout: Boolean? = null,
+    onToggleSmartLayout: (() -> Unit)? = null,
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -66,6 +69,20 @@ fun ViewerTopBar(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
+            // β 开关：v2 默认关（docs/07 D-V2-3）。只做一个轻量入口，不新建设置页。
+            if (smartLayout != null && onToggleSmartLayout != null) {
+                IconButton(onClick = onToggleSmartLayout) {
+                    Text(
+                        text = if (smartLayout) "版式β·开" else "版式β·关",
+                        fontSize = 12.sp,
+                        color = if (smartLayout) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
         }
     }
 }

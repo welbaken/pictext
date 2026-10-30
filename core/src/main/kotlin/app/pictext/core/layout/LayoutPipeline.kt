@@ -42,7 +42,22 @@ data class LayoutSummaryStats(
     val orderAmbiguous: Boolean,
     val verticalRatio: Float,
     val maxScore: Float,
-)
+    /** 解码 + 预处理（tile 采样、缩放、归一化）。 */
+    val decodeMs: Long = 0,
+    /** 推理（ORT session.run 累计）。 */
+    val detectMs: Long = 0,
+    /** 区域合并 + ROI 细化 + 二次判定。 */
+    val refineMs: Long = 0,
+    /** 覆盖审计（含残差补区的二次审计）。 */
+    val coverageMs: Long = 0,
+    /** 阅读顺序（XY-cut）。 */
+    val orderMs: Long = 0,
+) {
+    /** 一行看清性能瓶颈在哪。 */
+    fun stageSummary(): String =
+        "decode=${decodeMs}ms detect=${detectMs}ms refine=${refineMs}ms " +
+            "coverage=${coverageMs}ms order=${orderMs}ms"
+}
 
 /**
  * v2 版式分析管线（docs/07 §3.1 的那张流程图）。
@@ -110,11 +125,18 @@ class LayoutPipeline(
         val mapped = ArrayList<MappedDetection>(64)
         val tileGrays = ArrayList<Pair<Tile, GrayImage>>(grid.count)
         var maxScore = 0f
+        var decodeNanos = 0L
+        var detectNanos = 0L
 
         for (tile in grid.tiles) {
+            val t0 = System.nanoTime()
             val argb = sampler.sample(tile.src, tile.innerWidth, tile.innerHeight, page.backgroundColor)
             preprocessor.process(argb, tile.innerWidth, tile.innerHeight, tile, input, gray)
+            val t1 = System.nanoTime()
             val detections = detector.detect(input, tile)
+            val t2 = System.nanoTime()
+            decodeNanos += t1 - t0
+            detectNanos += t2 - t1
             for (d in detections) if (d.score > maxScore) maxScore = d.score
             mapped.addAll(postprocessor.postprocess(tile, detections, page.size))
             tileGrays.add(tile to GrayImage(model, model, gray.copyOf(model * model), page.backgroundColor))
@@ -131,9 +153,11 @@ class LayoutPipeline(
         }
 
         // 区域 + 细化 + 二次判定。
+        val tRefine = System.nanoTime()
         val built = builder.build(mapped, page.size)
         var regions = built.map { fixer.fix(it, refiner.refine(regionSampler, page, it)) }
         regions = regions.map { r -> r.copy(lines = fixer.normalizeRoles(r)) }
+        val refineMs = (System.nanoTime() - tRefine) / 1_000_000
 
         val textual = regions.count { it.isTextual && it.lines.isNotEmpty() }
         if (regions.size < 2 || textual == 0) {
@@ -151,6 +175,7 @@ class LayoutPipeline(
         // 但现实中一个被漏掉的大图块（合成页的占位图、纯色卡片）就足以把单页残差顶到 20%；
         // 而残差补区本来就是为这种情况设计的、且**绝不丢内容**（补不到行就整块保留像素）。
         // 所以这里改成：先补区，补完再看覆盖率；补区后仍不达标（或残差块过多）才回退。
+        val tCoverage = System.nanoTime()
         val first = coverageOf(tileGrays, regions)
         if (first.residuals.size > options.maxResiduals) {
             return LayoutOutcome.Fallback(
@@ -181,6 +206,7 @@ class LayoutPipeline(
 
         val all = regions + residuals
         val coverage = coverageOf(tileGrays, all)
+        val coverageMs = (System.nanoTime() - tCoverage) / 1_000_000
         if (coverage.coverage < options.minCoverage) {
             val code = if (coverage.residualRatio > options.residualFailRatio) {
                 "layout_residual_high"
@@ -224,7 +250,9 @@ class LayoutPipeline(
             )
         }
 
+        val tOrder = System.nanoTime()
         val ordered = orderer.order(all, medianLineHeight(all))
+        val orderMs = (System.nanoTime() - tOrder) / 1_000_000
         val notes = ArrayList<String>(5)
         notes.add("layout_model=${contract.name}")
         notes.add("layout_tiles_${grid.count}")
@@ -245,6 +273,11 @@ class LayoutPipeline(
                 orderAmbiguous = ordered.ambiguous,
                 verticalRatio = verticalRatio,
                 maxScore = maxScore,
+                decodeMs = decodeNanos / 1_000_000,
+                detectMs = detectNanos / 1_000_000,
+                refineMs = refineMs,
+                coverageMs = coverageMs,
+                orderMs = orderMs,
             ),
         )
     }

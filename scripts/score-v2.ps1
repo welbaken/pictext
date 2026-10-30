@@ -1,9 +1,9 @@
 # 批量跑 v2 版式链路，产出可比对的统计表（docs/07 V2-13 / V2-33）。
 #
-# 用法：
-#   powershell -ExecutionPolicy Bypass -File scripts/score-v2.ps1
-#   powershell -ExecutionPolicy Bypass -File scripts/score-v2.ps1 -Dirs testdata/samples
-#   powershell -ExecutionPolicy Bypass -File scripts/score-v2.ps1 -SkipV1       # 只跑 v2
+# 用法（脚本是 UTF-8 无 BOM，请用 pwsh 7，Windows PowerShell 5.1 会按 ANSI 读成乱码）：
+#   pwsh -NoProfile -File scripts/score-v2.ps1
+#   pwsh -NoProfile -File scripts/score-v2.ps1 -Dirs testdata/samples
+#   pwsh -NoProfile -File scripts/score-v2.ps1 -SkipV1       # 只跑 v2
 #
 # 输出：
 #   testdata/report-v2.csv      每张图一行（strategy / fallback / regions / lines / tiles / coverage / 耗时）

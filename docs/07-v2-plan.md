@@ -1622,6 +1622,7 @@ testdata/report-v2.md                  # 批量对比
 | 编排 | `core/plan/SmartReflow.kt`（v2 → v1 → 原图） | `SmartReflowTest`：模型缺失走 v1、v2 失败回退带诊断码、竖排走原图 |
 | V2-12（部分） | `cli/{Main,V2,DesktopLayoutDetector}.kt`：`--layout/--model/--detections/--dump-regions/--compare` | `:cli:run` 对 42 张（29 真实 + 12 夹具 + 1 设备截图）跑通；桌面 ORT 单 tile ≈20.8ms |
 | V2-13（部分） | `scripts/score-v2.ps1`、`testdata/report-v2.{md,csv}`、`testdata/layout/detection-baseline.md` | 37 张可解码图上 **v2 接管 31 张（84%）**、`auditV2` 31/31 通过、覆盖率 0.999+；6 张回退全部有诊断码 |
+| V2-32 | `app/.../layout/{ModelAssets,OrtLayoutDetector,AndroidTileSampler}.kt`、`AppContainer`、`SettingsRepository.smartLayout`（β 开关在顶栏）、`ViewerViewModel` 走 `SmartReflow` | MuMu（Android 15 / 1440×2560 / x86_64）实测：模型从 assets 装到 filesDir、ORT 双输入会话就绪、`strategy=DOC_LAYOUT`、`coverage=1.000`、`auditV2=true`、页面正常重排 |
 
 ### 13.1.1 检测基线摘要（详见 `testdata/layout/detection-baseline.md`）
 
@@ -1662,13 +1663,43 @@ testdata/report-v2.md                  # 批量对比
 11. **切分从 `needed` 往上试，而不是往下退**：±8% 窗口会让某一段比理想宽 8%，
     它就只能被压缩（字号比同页小一截）。实现先找“每段都放得下 `s`”的最小段数
     （`needed` 起往上到硬上限），仍不行才退到更少段数并压缩该行——“宁可多切，不降字号”。
+12. **APK 里只放 ONNX**：`models/` 里还有转换用的 `inference.json/.pdiparams/.yml`（5.2MB），
+    运行时用不到。`androidResources.ignoreAssetsPatterns` 按文件名忽略它们，
+    release 因此从 27.67MB 降到 **23.44MB**。加 `-keep class ai.onnxruntime.**` 防 R8 打断 JNI。
+13. **UI 入口**：仓库里还没有设置页，β 开关做成顶栏右侧的“版式β·开/关”按钮
+    （改动后立即重跑当前页与下一页的分析）；`AppSettings.smartLayout` 默认仍是 `false`。
 
-### 13.3 未完成（按优先级）
+### 13.4 Android 实测（MuMu 模拟器，Android 15 / 1440×2560 / x86_64）
 
-1. **V2-13 检测基线**：29 张真实截图 + 12 张夹具跑 `--model`，产出 `testdata/layout/detection-baseline.md`
-   （区域召回/准确率、行覆盖、顺序、失败模式）。**这是判断“模型在手机截图上够不够用”的唯一依据**，
-   也是 §2.7 风险表里“召回 <70% 就暂停”的闸门。
-2. **V2-32 App 接线**：`OrtLayoutDetector` / `ModelAssets` / `AndroidTileSampler` / 设置项 `smartLayout`。
-   本机没有 Android SDK，需要先装 SDK 才能编译 `:app`。
-3. **V2-33 / V2-40 / V2-41**：批量 A/B 报告、长图/宽图性能、真机验收（MuMu 模拟器可连 `127.0.0.1:16416`）。
+| 项 | 实测 |
+|---|---|
+| 构建 | JDK 17 + AGP 8.7.3 + SDK 35 + build-tools 35.0.0（本机 `%LOCALAPPDATA%\Android\Sdk`） |
+| APK（debug，arm64+x86_64） | 56.84MB |
+| APK（release，arm64，R8） | **23.44MB**（`libonnxruntime.so` 17.6MB + JNI 0.9MB + ONNX 4.9MB） |
+| 模型安装 | assets → `filesDir/models/`，4,914,725 B，带版本戳 |
+| ORT 会话 | `inputs=[image, scale_factor] outputs=[fetch_name_0, fetch_name_1]`，2 线程 |
+| **v1 分析（1080×1793）** | 786ms |
+| **v2 分析（1080×1793）** | 1712ms，其中 `decode=386 detect=113 refine=707 coverage=305 order=1` |
+| v2 结果 | `strategy=DOC_LAYOUT`、24 区域 / 29 行 / 9 图、`coverage=1.000`、`auditV2=true`、`scale=3.0` |
+| β 开关 | 顶栏切换后立即重跑当前页，`DataStore` 持久化，重启 App 仍生效 |
+| 1440×2560 设备截图 | v2 2275ms（4 tile，8 个残差补区） |
+
+> **性能结论（这就是 V2-40 的输入）**：`refine`（ROI 细化 707ms）和 `coverage`（305ms）
+> 占 v2 总耗时的 59%，模型推理只有 113ms。优化顺序应当是：
+> ① 覆盖审计复用 tile 的 Otsu 掩膜（现在前后各算一遍）；② 细化只对文字区域做、
+> 且先用低分辨率判断“有没有字”；③ tile 解码 386ms 也偏高（`inSampleSize=2` 后再缩放），
+> 可以直接 `inSampleSize=1` + 一步缩放到 480。
+>
+> **模拟器已知问题**：MuMu 的 MediaProvider 在 `/storage/emulated/0` 上会报
+> `Failed to update quota type for ...`，偶尔让相册/分享的 `openInputStream` 卡住（App 停在
+> “正在分析版式…”）。这是模拟器存储实现的问题，不是 App 逻辑——同一份图从相册重新选一次就能过。
+> 真机验收（V2-41）要在真实设备上复核“打开/分享 50 次不卡”。
+
+### 13.5 未完成（按优先级）
+
+1. **V2-13 收尾**：`ground-truth/*.json` 的 `box/order` → 区域召回/准确率、严格顺序准确率
+   （不需要模型，纯 Kotlin）。这是判断“模型在手机截图上够不够用”的唯一依据。
+2. **V2-40 性能**：先给 `LayoutPipeline` 加分段计时（tile 解码 / 预处理 / 推理 / 细化 / 审计），
+   再针对最大头优化；目标 1080×2400 ≤350ms、1080×20000 ≤1.5s。
+3. **V2-33 / V2-41**：`--compare` 批量 A/B 报告、真机验收清单（模拟器已连通 `127.0.0.1:16416`）。
 4. **V2-42 量化**：不阻塞 v2.0。
