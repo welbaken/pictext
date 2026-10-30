@@ -10,6 +10,10 @@ package app.pictext.core.analyze
  * - `split*`：切分安全门（P0-3）；
  * - `latin*`：拉丁/URL 安全切分（P1-1，默认关）；
  * - `multiColumn*`：多栏安全网（P1-4）。
+ *
+ * v1.2：分析期会为每条 BODY/HEADING 行预计算“候选字缝”（`TextLine.cuts`，行内所有安全切点），
+ * 供 ×4 的二次重排按需要的段数挑最近的一刀。它不是开关：用户在阅读页随时可能点 ×4，
+ * 而分析只做一次。
  */
 data class AnalysisOptions(
     val analysisMaxSide: Int = 1600,
@@ -75,8 +79,6 @@ data class AnalysisOptions(
      * 既保住字号一致，又不会去切居中标题或缩进引用（它们不左对齐）。
      */
     val splitLeftAlignedRatio: Float = 0.50f,
-    /** [v1.1] 一行最多切几段：2 = 现有左右对半；4 = ×4 模式（每个半行再各切一刀）。 */
-    val splitSegments: Int = 2,
 
     val cutWin0: Float = 0.06f,
     val cutWin1: Float = 0.025f,

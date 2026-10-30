@@ -1,6 +1,7 @@
-﻿# 用 testdata/samples 下的真实图片跑一遍 CLI，生成 after/debug/plan，
+# 用真实样例跑一遍 CLI，生成 after/debug/plan，
 # 并把 manifest.json、report.md、summary.png 全部由同一次运行生成（docs/06 P0-0）。
 #
+# 真实截图不随仓库分发：优先 testdata/private/samples，其次 testdata/samples。
 # 用法：powershell -ExecutionPolicy Bypass -File scripts/test-samples.ps1 [-OutWidth 1080] [-SkipSummary]
 param(
     [int]$OutWidth = 1080,
@@ -10,11 +11,12 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
+    $sampleDir = if (Test-Path "testdata/private/samples") { "testdata/private/samples" } else { "testdata/samples" }
     $samples = @("twitter", "news_jp", "xerj", "arknights")
     $hard = @{ arknights = "硬样例：复杂美术背景，验收标准是安全回退、内容完整" }
     $records = @()
     foreach ($name in $samples) {
-        $input = "testdata/samples/$name.jpg"
+        $input = Join-Path $sampleDir "$name.jpg"
         if (-not (Test-Path $input)) {
             Write-Warning "跳过 $input（文件不存在）"
             continue

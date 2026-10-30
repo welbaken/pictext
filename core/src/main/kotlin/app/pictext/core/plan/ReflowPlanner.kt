@@ -10,6 +10,8 @@ import app.pictext.core.model.RectI
 import app.pictext.core.model.ReflowPlan
 import app.pictext.core.model.RenderItem
 import app.pictext.core.model.TextLine
+import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -74,9 +76,9 @@ class ReflowPlanner {
         var active = splitLines
         var bodyScale = 0f
         for (i in 0 until 4) {
-            // slot 一律按“左右两半”算：bodyScale 先保证两半放得下，
-            // 4 段只是 ×4 下宽行的兜底（见下面的 halfTooWide），不能用它把基准倍率抬高。
-            val slot = if (active.isEmpty()) pageWidth else slotFor(active, pageWidth, 2)
+            // 基准倍率一律按“左右两半”算：×4 的 2/4 段是二次重排（见 secondPassBounds），
+            // 不能用它把 ×2 的基准抬高。
+            val slot = if (active.isEmpty()) pageWidth else slotFor(active, pageWidth)
             val bySlot = scaleFor(slot, contentW, emScale, options.maxScale)
             val widestUnsplit = layout.textLines()
                 .filter { it.role == LineRole.BODY && it !in active }
@@ -94,6 +96,12 @@ class ReflowPlanner {
             bodyScale = min(bodyScale * options.scaleMultiplier, options.maxScale * options.scaleMultiplier)
             notes.add("scale_x${format(options.scaleMultiplier)}")
             notes.add("forced_scale")
+        }
+        // 强制档位只放大、不缩小：海报/大字截图这类页面算出的倍率可能 < 1，
+        // 那等于把页面缩小，而用户点 ×2/×4 想要的是更大。
+        if (options.forceReflow && bodyScale < 1f) {
+            bodyScale = 1f
+            notes.add("forced_min_1x")
         }
 
         // gain 以“原图按屏宽显示”为基准，而不是源图像素。
@@ -123,18 +131,13 @@ class ReflowPlanner {
     }
 
     /** 所有待切行的最大半行宽；没有待切行时按整版心宽（= 整页不切，只放大）。 */
-    private fun slotFor(lines: List<TextLine>, pageWidth: Int, maxSegments: Int): Int {
+    private fun slotFor(lines: List<TextLine>, pageWidth: Int): Int {
         var s = 0
         for (line in lines) {
-            val xs = if (maxSegments >= 4 && line.cuts.size >= 2) line.cuts else listOf(line.cutX)
-            var prev = line.band.left
-            for (x in xs) {
-                if (x <= prev || x >= line.band.right) continue
-                s = max(s, x - prev)
-                prev = x
-            }
-            if (prev <= line.band.left || prev >= line.band.right) continue
-            s = max(s, line.band.right - prev)
+            val cut = line.cutX
+            if (cut <= line.band.left || cut >= line.band.right) continue
+            s = max(s, cut - line.band.left)
+            s = max(s, line.band.right - cut)
         }
         return if (s > 0) s else max(1, pageWidth)
     }
@@ -173,6 +176,12 @@ class ReflowPlanner {
         val blockGap = max((1.6f * lineGap).roundToInt(), (0.45f * outEm).roundToInt())
 
         val bodyRefHeight = max(6f, layout.medianLineHeight) * bodyScale
+        // [v1.2] ×4 = 把 ×2 的输出当一张新图重新排一次：每条 BODY/HEADING 行按新倍率
+        // 决定切 2 段还是 4 段，段与段之间用分析期预存的候选字缝。
+        // 用户关掉切分（splitEnabled=false）时尊重设置：只放大，不再切行。
+        val secondPass = options.scaleMultiplier > 1.001f && options.splitEnabled
+        var secondPassSplit = false
+        if (secondPass) notes.add("second_pass")
         var y = inset
         var emitted = false
         var previousText: TextLine? = null
@@ -225,6 +234,30 @@ class ReflowPlanner {
 
                         val splitAllowed = mode == PlanMode.REFLOW && line in splitLines && line.cutX > 0
                         val role = line.role
+                        // [v1.2] ×4 二次重排：按目标倍率切 2/4 段，段宽不足时不再把整行压小。
+                        if (secondPass && (role == LineRole.BODY || role == LineRole.HEADING)) {
+                            val pieces = secondPassBounds(line, bodyScale, colW, options.maxSegments)
+                            if (pieces.size >= 2) {
+                                secondPassSplit = true
+                                var firstPiece = true
+                                for ((px0, px1) in pieces) {
+                                    val pieceW = max(1, px1 - px0)
+                                    addText(
+                                        RectI(px0, sy0, px1, sy1),
+                                        pieceW,
+                                        lineHeight,
+                                        min(bodyScale, colW.toFloat() / pieceW),
+                                        role,
+                                        centered = line.centered,
+                                        gapBefore = if (firstPiece) gapBefore else lineGap,
+                                    )
+                                    firstPiece = false
+                                }
+                                lineIndex++
+                                previousText = line
+                                continue
+                            }
+                        }
                         // 标题只在“不切就会比正文矮”时才切：比较的是输出字高，不是倍数。
                         // 新闻标题第二行虽然整行装不下 2.73×，压到 2.43× 后字高仍大于正文，
                         // 就不该为了倍数一致把它拆成两行（会剩下“広島”孤零零一行）。
@@ -237,15 +270,8 @@ class ReflowPlanner {
                             val scale = bodyScale
                             // 按行自己的墨迹范围裁剪两半：版心只是统计量，不是裁剪边界。
                             // 用版心裁会把比版心更宽/更靠左的行切掉一截（真实样例踩过）。
-                            // [v1.1] ×4 模式用 4 段（cuts 有 3 个切点）；否则就是左右两半。
-                            // 半行仍然放不下（宽行 × 大倍率）时，才用 4 段；否则保持左右两半。
-                            val halfW = (line.band.width / 2).coerceAtLeast(1)
-                            val halfTooWide = halfW * scale > colW * 1.002f
-                            val xs = if (options.maxSegments >= 4 && line.cuts.size >= 2 && halfTooWide) {
-                                line.cuts
-                            } else {
-                                listOf(line.cutX)
-                            }
+                            // ×4 的 2/4 段由上面的二次重排处理，这里只做 ×2 的左右两半。
+                            val xs = listOf(line.cutX)
                             val bounds = ArrayList<Int>(xs.size + 2)
                             bounds.add(line.band.left)
                             for (x in xs) if (x > bounds.last() && x < line.band.right) bounds.add(x)
@@ -333,12 +359,14 @@ class ReflowPlanner {
         if (items.isEmpty()) {
             return originalPlan(layout, outW, FallbackReason.NO_TEXT, notes)
         }
+        // 二次重排真的切了段，模式就是 REFLOW：×2 里“整页不切”的行在 ×4 可能又被切开了。
+        val finalMode = if (secondPassSplit) PlanMode.REFLOW else mode
         return ReflowPlan(
             outputWidth = outW,
             height = height,
             scale = bodyScale,
             gain = gain,
-            mode = mode,
+            mode = finalMode,
             fallback = fallback,
             items = items,
             backgroundColor = layout.backgroundColor,
@@ -346,6 +374,73 @@ class ReflowPlanner {
             notes = notes,
             bodyScale = bodyScale,
         )
+    }
+
+    /**
+     * ×4 二次重排：这一行在 [scale] 下要切几段、每段在 A 坐标里的 x 范围。
+     *
+     * ×2 的一行在 ×4 里字号翻倍，所以每段宽度必须减半：先算需要的段数，再从
+     * [TextLine.cuts]（这一行所有安全字缝）里为每个理想分界点挑最近的一刀。
+     * 固定刀位会切出 `197/18/56/158` 这种碎片；挑最近的缝才能得到接近等分的段。
+     *
+     * @return 空列表表示不切（放得下，或者没有安全切点——此时只能整行放大并被压缩）。
+     */
+    private fun secondPassBounds(
+        line: TextLine,
+        scale: Float,
+        contentW: Int,
+        maxSegments: Int,
+    ): List<Pair<Int, Int>> {
+        val l = line.band.left
+        val r = line.band.right
+        val w = r - l
+        if (w <= 0 || scale <= 0f) return emptyList()
+        val needed = ceil(w.toFloat() * scale / contentW).toInt()
+        if (needed <= 1) return emptyList()
+        val candidates = line.cuts
+        if (candidates.isEmpty()) return emptyList()
+        var pieces = 2
+        while (pieces < needed && pieces * 2 <= maxSegments) pieces *= 2
+        while (pieces >= 2) {
+            boundsFor(l, r, pieces, candidates)?.let { return it }
+            pieces /= 2
+        }
+        return emptyList()
+    }
+
+    /** 在 [candidates] 里为 [pieces] 段挑分界点；挑不齐返回 null。 */
+    private fun boundsFor(
+        l: Int,
+        r: Int,
+        pieces: Int,
+        candidates: List<Int>,
+    ): List<Pair<Int, Int>>? {
+        val w = r - l
+        val xs = ArrayList<Int>(pieces - 1)
+        for (i in 1 until pieces) {
+            val ideal = l + (w.toLong() * i / pieces).toInt()
+            var best = -1
+            var bestDist = Int.MAX_VALUE
+            for (c in candidates) {
+                if (c <= l || c >= r) continue
+                if (xs.isNotEmpty() && c <= xs.last()) continue
+                val d = abs(c - ideal)
+                if (d < bestDist) {
+                    bestDist = d
+                    best = c
+                }
+            }
+            if (best <= 0) return null
+            xs.add(best)
+        }
+        val bounds = ArrayList<Pair<Int, Int>>(pieces)
+        var prev = l
+        for (x in xs + r) {
+            if (x <= prev) return null
+            bounds.add(prev to x)
+            prev = x
+        }
+        return bounds
     }
 
     private fun earlyFallback(layout: PageLayout, relaxed: Boolean = false): FallbackReason? {

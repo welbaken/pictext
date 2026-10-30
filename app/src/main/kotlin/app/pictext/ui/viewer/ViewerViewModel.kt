@@ -63,6 +63,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     /** 底栏三档。首次规划沿用“自动判断”，结果决定落在原图还是 ×2。 */
     private var level = ViewerLevel.X2
     private var autoLevel = true
+
+    /** 双指缩放相对当前档位基准的偏移；×2 档最多 2.0（= ×4），×4 档最多 1.0。 */
+    private var zoom = 1f
     private val scrollRatios = HashMap<Int, Float>()
 
     /** Activity 重建（旋转）时用来避免重复 intake；进程死亡后新 ViewModel 为 false。 */
@@ -155,8 +158,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     /** 切换底栏档位：原图 / ×2 / ×4。切分方式与档位互相独立。 */
     fun setLevel(newLevel: ViewerLevel) {
         autoLevel = false
-        if (level == newLevel) return
+        val levelChanged = level != newLevel
+        // 点同一个档位 = 回到该档的标准倍率（清掉双指缩放留下的偏移）。
+        val zoomChanged = zoom != 1f
+        if (!levelChanged && !zoomChanged) return
         level = newLevel
+        zoom = 1f
         mode = if (newLevel == ViewerLevel.ORIGINAL) ViewerMode.ORIGINAL else ViewerMode.REFLOW
         val ready = _state.value as? ViewerUiState.Ready
         if (ready != null) {
@@ -166,12 +173,36 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         publish()
     }
 
-    fun setMode(newMode: ViewerMode) {
-        mode = newMode
-        val ready = _state.value as? ViewerUiState.Ready ?: return
-        _state.value = ready.copy(mode = newMode, showBars = true)
+    /**
+     * 双指缩放：在“×2 ↔ ×4”这条连续轴上移动。
+     *
+     * 倍率 = 档位基准 × 手势缩放，范围 [1.0, 2.0]：上限就是 ×4 的基准，因为再往上一条满宽行
+     * 要切 5 段以上，二次重排只能把字号压小，“同页一个字号”就保不住了。
+     * 到达两端时档位一起切过去，底栏高亮才跟得上。
+     */
+    fun setZoomMultiplier(target: Float) {
+        if (!target.isFinite() || level == ViewerLevel.ORIGINAL) return
+        val m = target.coerceIn(ViewerLevel.MIN_MULTIPLIER, ViewerLevel.MAX_MULTIPLIER)
+        val snapped = when {
+            m >= ViewerLevel.MAX_MULTIPLIER - 0.02f -> ViewerLevel.X4
+            m <= ViewerLevel.MIN_MULTIPLIER + 0.02f -> ViewerLevel.X2
+            else -> level
+        }
+        val newZoom = (m / snapped.baseMultiplier).coerceIn(0.5f, 2f)
+        if (snapped == level && kotlin.math.abs(newZoom - zoom) < 0.01f) return
+        autoLevel = false
+        level = snapped
+        zoom = newZoom
+        mode = ViewerMode.REFLOW
+        val ready = _state.value as? ViewerUiState.Ready
+        if (ready != null) _state.value = ready.copy(level = snapped, mode = mode)
+        replanAll()
         publish()
     }
+
+    /** 当前生效的重排倍率（档位基准 × 双指缩放），规划器与重排页共用。 */
+    fun effectiveMultiplier(): Float =
+        (level.baseMultiplier * zoom).coerceIn(ViewerLevel.MIN_MULTIPLIER, ViewerLevel.MAX_MULTIPLIER)
 
     fun setCurrentPage(index: Int) {
         val ready = _state.value as? ViewerUiState.Ready ?: return
@@ -289,6 +320,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     fallback = plan.fallback,
                     loading = false,
                     failure = null,
+                    multiplier = session.multiplier,
                     version = session.planVersion,
                 )
                 publish()
@@ -310,10 +342,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         val file = entry.file ?: throw DecodeException(FailureKind.UNREADABLE, "no file")
         val started = System.nanoTime()
         val decoded = BitmapDecoder.decodeForAnalysis(file)
+        // 分析期会把 ×4 二次重排要用的候选字缝一并算好（每条正文行的所有安全切点）：
+        // 用户在阅读页随时可能点 ×4，而分析只做一次；这点开销是一次线性扫描，远小于二值化。
         val layout = LayoutAnalyzer().analyze(decoded.gray, decoded.srcWidth, decoded.srcHeight)
         val source = SourceImage(file)
         val analysisMs = (System.nanoTime() - started) / 1_000_000
-        val plan = planner.plan(layout, options())
+        val opts = options()
+        val plan = planner.plan(layout, opts)
         // 分享进入的第一页：按自动判断的结果决定初始档位（原图 or ×2），之后才由用户手动切换。
         if (autoLevel && index == 0) {
             autoLevel = false
@@ -336,37 +371,45 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             layout = layout,
             plan = plan,
             renderer = renderer,
-        )
+        ).also { it.multiplier = opts.scaleMultiplier }
     }
 
     /**
      * 计划参数。`level` 是用户当前选的三档：
      * - 原图：不进规划；
      * - ×2：forceReflow=true，跳过“长行不足/收益不足/多栏”等前置判断，照常两段；
-     * - ×4：在 ×2 的倍率上再 ×2（scaleMultiplier），宽行允许切 4 段。
+     * - ×4：走**二次重排**（scaleMultiplier=2）——把 ×2 的结果当新图，字号翻倍、
+     *   放不下的行按候选字缝再切到 2/4 段，而不是简单乘倍率再压回列宽。
+     *
+     * 双指缩放会把倍率在 [1, 2] 之间连续调整（见 [setZoomMultiplier]）；倍率 > 1 时
+     * 就打开二次重排，段数上限同步放宽到 4。
      */
     private fun options(): ReflowOptions {
         val app = getApplication<Application>()
         val density = app.resources.displayMetrics.scaledDensity
         val targetEm = (settings.targetSp * density).roundToInt().coerceAtLeast(14)
         val forced = !autoLevel && level != ViewerLevel.ORIGINAL
+        val multiplier = effectiveMultiplier()
         return ReflowOptions(
             outputWidth = viewportWidth.coerceAtLeast(1),
             targetEm = targetEm,
             splitEnabled = settings.splitMode != SplitMode.OFF,
             forceTwo = settings.splitMode == SplitMode.FORCE_TWO,
             forceReflow = forced,
-            scaleMultiplier = if (level == ViewerLevel.X4) 2f else 1f,
-            maxSegments = if (level == ViewerLevel.X4) 4 else 2,
-            maxScale = if (level == ViewerLevel.X4) 6f else 3f,
+            scaleMultiplier = multiplier,
+            maxSegments = if (multiplier > 1.001f) 4 else 2,
+            // 倍率的基准与档位无关（都受 maxScale=3 约束），最终上限是
+            // maxScale × scaleMultiplier ≤ 6。
+            maxScale = 3f,
         )
     }
 
     private fun replanAll() {
         var changed = false
+        val opts = options()
         for (i in sessions.indices) {
             val session = sessions[i] ?: continue
-            val newPlan = planner.plan(session.layout, options())
+            val newPlan = planner.plan(session.layout, opts)
             val newStrips = if (session.strips.outputWidth == viewportWidth.coerceAtLeast(1)) {
                 session.strips
             } else {
@@ -375,6 +418,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             }
             session.strips = newStrips
             session.plan = newPlan
+            session.multiplier = opts.scaleMultiplier
             session.planVersion++
             session.renderer = TileRenderer(session.layout, newPlan, session.sourceImage, newStrips)
             if (i in pages.indices) {
@@ -382,6 +426,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     mode = newPlan.mode,
                     plan = newPlan,
                     fallback = newPlan.fallback,
+                    multiplier = session.multiplier,
                     version = session.planVersion,
                 )
             }
@@ -403,6 +448,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             current = current,
             settings = settings,
             mode = mode,
+            level = level,
             viewportWidth = viewportWidth,
         )
     }

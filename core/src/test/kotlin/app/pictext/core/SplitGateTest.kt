@@ -103,6 +103,48 @@ class SplitGateTest {
     }
 
     @Test
+    fun `indented quote row keeps its gaps for the x4 second pass`() {
+        // ×2 的切分门不让缩进行参与切分（半句引用切成两行没有收益），
+        // 但 ×4 字号翻倍后它同样需要能继续对半，所以候选缝要预先算好。
+        val mask = BooleanArray(w * h)
+        drawGlyphRow(mask, w, 10, 22, 10, 390)
+        drawGlyphRow(mask, w, 45, 22, 10, 390)
+        drawGlyphRow(mask, w, 80, 22, 80, 390)
+        val lines = listOf(
+            TextLine(RectI(10, 10, 390, 32)),
+            TextLine(RectI(10, 45, 390, 67)),
+            TextLine(RectI(80, 80, 390, 102)),
+        )
+        val result = splitter.split(mask, w, h, block(*lines.toTypedArray()), metrics())
+        val updated = result.blocks.flatMap { (it as Block.Paragraph).lines }
+        val quote = updated[2]
+        assertFalse("缩进行不参与 ×2 切分", quote.split)
+        assertEquals(-1, quote.cutX)
+        assertTrue("×4 需要候选缝: ${quote.cuts}", quote.cuts.size >= 2)
+        assertTrue("候选缝必须递增", quote.cuts.zipWithNext().all { (a, b) -> a < b })
+        assertTrue("候选缝必须在行内", quote.cuts.all { it > quote.band.left && it < quote.band.right })
+    }
+
+    @Test
+    fun `ui row offers no candidate gaps`() {
+        val mask = BooleanArray(w * h)
+        drawGlyphRow(mask, w, 10, 22, 10, 390)
+        var x = 10
+        while (x + 30 <= 390) {
+            maskFill(mask, w, 55, 77, x, x + 10)
+            maskFill(mask, w, 59, 69, x + 16, x + 30)
+            x += 90
+        }
+        val lines = listOf(
+            TextLine(RectI(10, 10, 390, 32)),
+            TextLine(RectI(10, 55, 370, 77), role = LineRole.UI),
+        )
+        val result = splitter.split(mask, w, h, block(*lines.toTypedArray()), metrics())
+        val updated = result.blocks.flatMap { (it as Block.Paragraph).lines }
+        assertTrue("UI 行在 ×4 里也不许切: ${updated[1].cuts}", updated[1].cuts.isEmpty())
+    }
+
+    @Test
     fun `latin rows are refused and push the page to weak`() {
         val mask = BooleanArray(w * h)
         latinRow(mask, 10, 10, 390)

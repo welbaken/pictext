@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>电商详情 · 左图右文</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  body { background: #ffffff; }
+  .page { max-width: 1080px; padding: 0 36px 64px; }
+  .nav { display: flex; align-items: center; gap: 18px; padding: 16px 0; border-bottom: 1px solid var(--line); font-size: 17px; color: #555b68; }
+  .nav .brand { font-size: 23px; font-weight: 900; color: #111; }
+  .nav .spacer { flex: 1; }
+  .product { display: flex; gap: 28px; padding: 24px 0 8px; align-items: flex-start; }
+  .gallery { width: 520px; flex: 0 0 auto; }
+  .gallery .main { height: 520px; border-radius: 8px; }
+  .gallery .thumbs { display: flex; gap: 8px; margin-top: 8px; }
+  .gallery .thumbs .ph { width: 80px; height: 80px; border-radius: 6px; }
+  .info { flex: 1; min-width: 0; }
+  .price { font-size: 42px; font-weight: 900; color: #c62828; line-height: 1.2; }
+  .price small { font-size: 18px; font-weight: 500; color: #8a8f9c; margin-left: 8px; }
+  .promo { background: #fff4f2; border: 1px solid #ffd9d2; border-radius: 8px; padding: 10px 14px; font-size: 16px; color: #a53125; margin: 12px 0 16px; }
+  h1 { font-size: 27px; line-height: 1.45; margin: 6px 0 10px; }
+  .sub { font-size: 18px; color: #6b7080; margin: 0 0 16px; }
+  .spec { font-size: 16px; }
+  .spec th, .spec td { padding: 8px 10px; }
+  .buy { display: flex; gap: 12px; margin-top: 18px; }
+  .buy .btn { flex: 1; text-align: center; padding: 13px 0; font-size: 19px; }
+  .section-title { font-size: 25px; font-weight: 800; margin: 34px 0 14px; }
+  .detail-img { height: 340px; border-radius: 8px; margin-bottom: 8px; }
+  .detail-text { font-size: 20px; line-height: 1.85; margin: 0 0 16px; color: #333844; }
+  .review { border-top: 1px solid var(--line); padding: 18px 0; }
+  .review .head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .review .name { font-size: 17px; font-weight: 700; }
+  .review .stars { color: #f2a11b; font-size: 15px; letter-spacing: 1px; }
+  .review p { font-size: 18px; line-height: 1.75; margin: 0; color: #3a3f4a; }
+  .review .meta { font-size: 14px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <nav class="nav" data-region="nav" data-kind="chrome" data-order="1">
+    <span class="brand">栖物</span><span>首页</span><span>数码</span><span>阅读器</span><span>配件</span>
+    <span class="spacer"></span><span>购物车 · 2</span>
+  </nav>
+
+  <div class="product">
+    <div class="gallery" data-region="gallery" data-kind="figure" data-order="2">
+      <div class="main ph ph--slate" data-label="MAIN 01" role="img" aria-label="产品主图"></div>
+      <div class="thumbs">
+        <div class="ph ph--sun"></div><div class="ph ph--coral"></div>
+        <div class="ph ph--mint"></div><div class="ph ph--violet"></div>
+      </div>
+    </div>
+
+    <div class="info">
+      <div class="price" data-region="price" data-kind="text" data-order="3">¥ 1,299 <small>起 · 6 期免息</small></div>
+      <h1 data-region="product-title" data-kind="title" data-order="4">
+        图读 Reader 7 · 6.8 英寸墨水屏阅读器 · 32GB
+      </h1>
+      <p class="sub" data-region="product-sub" data-kind="text" data-order="5">
+        只为长图阅读设计：本地版面重排、双指放大、原图随时可退。
+      </p>
+      <div class="promo" data-region="promo" data-kind="text" data-order="6">
+        限时赠品：磁吸保护套 + 一年碎屏险；10 月 31 日前下单。
+      </div>
+      <div class="table-wrap">
+        <table class="spec" data-region="spec-table" data-kind="table" data-order="7">
+          <tbody>
+            <tr><th>屏幕</th><td>6.8 英寸 · 300ppi · 冷暖双色温</td></tr>
+            <tr><th>存储</th><td>32GB（可用约 27GB）</td></tr>
+            <tr><th>尺寸</th><td>159 × 112 × 7.9 mm</td></tr>
+            <tr><th>电池</th><td>1800mAh · 约 6 周</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="buy" data-region="buy-actions" data-kind="ui" data-order="8">
+        <div class="btn">加入购物车</div>
+        <div class="btn btn--primary">立即购买</div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title" data-region="detail-title" data-kind="title" data-order="9">为长图做的三件事</h2>
+  <figure data-region="detail-fig1" data-kind="figure" data-order="10">
+    <div class="detail-img ph ph--grid" data-label="DETAIL 01" role="img" aria-label="长图重排示意"></div>
+    <figcaption data-region="detail-cap1" data-kind="caption" data-order="11">
+      图 1：同一张 1080×20000 的长图，左侧为原图按屏宽显示，右侧为重排后的单列。
+    </figcaption>
+  </figure>
+  <p class="detail-text" data-region="detail-p1" data-kind="text" data-order="12">
+    第一件事是把页面当成版面，而不是文字：先找行，再找字缝，最后才决定切不切。
+    第二件事是给每个区域一个角色，标题、正文、图注、按钮各用各的倍率。
+    第三件事是保留“原图”这个退路，任何一步不确定就退回去。
+  </p>
+  <figure data-region="detail-fig2" data-kind="figure" data-order="13">
+    <div class="detail-img ph ph--amber" data-label="DETAIL 02" role="img" aria-label="阅读页与参数"></div>
+  </figure>
+
+  <h2 class="section-title" data-region="review-title" data-kind="title" data-order="14">用户评价（128）</h2>
+  <div class="review" data-region="review-1" data-kind="text" data-order="15">
+    <div class="head">
+      <div class="avatar avatar--sm avatar--blue"></div>
+      <div><div class="name">读长图的人</div><div class="stars">★★★★★</div></div>
+    </div>
+    <p>终于不用在长图里来回拖了。公众号那种一屏三段的排版，重排后能一口气读完；图注也不会和正文挤在一行。</p>
+    <div class="meta muted">2026-10-21 · 32GB 黑色</div>
+  </div>
+  <div class="review" data-region="review-2" data-kind="text" data-order="16">
+    <div class="head">
+      <div class="avatar avatar--sm avatar--green"></div>
+      <div><div class="name">周末读书</div><div class="stars">★★★★☆</div></div>
+    </div>
+    <p>表格页还是建议看原图，重排后表格会被整体缩小。别的场景都挺好，尤其是新闻双栏，顺序终于对了。</p>
+    <div class="meta muted">2026-10-18 · 32GB 白色</div>
+  </div>
+</div>
+</body>
+</html>

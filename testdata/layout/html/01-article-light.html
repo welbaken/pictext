@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>图文文章 · 浅色背景</title>
+<link rel="stylesheet" href="base.css">
+</head>
+<body>
+<div class="page">
+
+  <header class="topbar" data-region="chrome-top" data-kind="chrome" data-order="1">
+    <div class="avatar avatar--lg avatar--blue"></div>
+    <div>
+      <div class="brand">端侧阅读实验室</div>
+      <div class="meta">把长图读成文章 · 第 12 期 · 6 分钟</div>
+    </div>
+    <div class="spacer"></div>
+    <span class="chip">端侧</span>
+  </header>
+
+  <section class="row">
+    <div class="col">
+      <h1 class="title-xl" data-region="hero-title" data-kind="title" data-order="2">
+        当屏幕只有六英寸，排版应该为谁让路
+      </h1>
+      <p class="body" data-region="hero-p1" data-kind="text" data-order="3">
+        一张信息密度很高的长图，在手机上按屏宽显示时，正文往往只有八到十号字。手指不断放大、拖动，
+        视线每读三行就要重新找位置；读完之后，记住的往往只是“这张图字很小”。
+      </p>
+      <p class="body" data-region="hero-p2" data-kind="text" data-order="4">
+        重排不是把图片拉伸，而是把版面上的文字行重新组织成适合窄屏的节奏。屏幕宽度是常量，
+        想让字变大，唯一的办法就是减少每行的字数。
+      </p>
+    </div>
+    <div class="col col--fixed" style="width:420px">
+      <figure data-region="hero-figure" data-kind="figure" data-order="5">
+        <div class="ph ph--sun" style="height:300px" data-label="IMG 01" role="img" aria-label="封面示意图"></div>
+        <figcaption data-region="hero-caption" data-kind="caption" data-order="6">
+          图 1：同一段内容在桌面与手机上的可读性差异（示意）。
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <article class="card card--flat" style="margin-top:34px">
+    <h2 class="title-md" data-region="sec1-title" data-kind="title" data-order="7">一、先判断“值不值得切”</h2>
+    <p class="body" data-region="sec1-p1" data-kind="text" data-order="8">
+      收益公式很简单：重排后的字高，除以原图按屏宽显示的字高。低于 1.25 倍，切分只会让文章更长、
+      字号更小；超过 1.8 倍，才值得为它改变版面。
+    </p>
+    <div class="quote" data-region="sec1-quote" data-kind="text" data-order="9">
+      宁可排版难看，不可丢内容。分类错了顶多某一段没切开；只要每个像素都还在，读者还能退回原图。
+    </div>
+    <div class="grid-2" style="margin:22px 0 6px">
+      <figure data-region="sec1-fig-a" data-kind="figure" data-order="10">
+        <div class="ph ph--coral" style="height:190px" data-label="IMG 02" role="img" aria-label="切分前示意"></div>
+      </figure>
+      <figure data-region="sec1-fig-b" data-kind="figure" data-order="11">
+        <div class="ph ph--mint" style="height:190px" data-label="IMG 03" role="img" aria-label="切分后示意"></div>
+      </figure>
+    </div>
+    <p class="caption" data-region="sec1-cap" data-kind="caption" data-order="12">
+      图 2 / 图 3：左为原始行宽，右为切分后的两段；图块不参与切分，整块等比放大。
+    </p>
+    <p class="body" data-region="sec1-p2" data-kind="text" data-order="13">
+      图块、表格、公式、海报同理。切开的图表会失去意义，这比字号不统一严重得多。
+      所以分类不确定时，宁可按图块处理：内容完整，最多是没放大。
+    </p>
+  </article>
+
+  <article class="card">
+    <h2 class="title-md" data-region="sec2-title" data-kind="title" data-order="14">二、让模型只做它擅长的事</h2>
+    <p class="body" data-region="sec2-p1" data-kind="text" data-order="15">
+      版面模型回答“这是什么区域、大概在哪”，不回答“这一行从哪切”。后者需要像素级的字缝，
+      仍然交给投影分析；两者之间用覆盖审计兜底，任何一块没被覆盖的墨迹都要补回来。
+    </p>
+    <p class="body" data-region="sec2-p2" data-kind="text" data-order="16">
+      这也是本项目从 v1 到 v2 最重要的边界：模型负责语义和顺序，几何负责像素和切点。
+      两边都不越界，失败才能逐级回退。
+    </p>
+  </article>
+
+  <footer class="footer" data-region="chrome-bottom" data-kind="chrome" data-order="17">
+    <span>图读 PicText</span><span>·</span><span>本地渲染 · 不联网</span>
+    <span style="flex:1"></span><span>1 / 1</span>
+  </footer>
+</div>
+</body>
+</html>

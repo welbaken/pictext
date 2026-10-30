@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>纸张背景 · 图文环绕</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  body {
+    background-color: #f3ead9;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(120, 90, 40, .035) 0 1px, transparent 1px 4px),
+      radial-gradient(ellipse at 20% 0%, rgba(255,255,255,.55), transparent 60%);
+    color: #2a241b;
+  }
+  .page { max-width: 1000px; padding: 38px 48px 56px; }
+  .masthead { text-align: center; border-bottom: 3px double #6b5a3e; padding-bottom: 14px; margin-bottom: 26px; }
+  .masthead .name { font: 800 34px/1.2 "SimSun", "Songti SC", serif; letter-spacing: 8px; }
+  .masthead .sub { font-size: 15px; color: #6f6250; letter-spacing: 2px; margin-top: 6px; }
+  h1, h2, p, .quote, .note { font-family: "SimSun", "Songti SC", serif; }
+  h1 { font-size: 38px; line-height: 1.35; letter-spacing: 1px; margin: 0 0 12px; }
+  .byline { font-size: 16px; color: #6f6250; border-bottom: 1px solid #cbbda4; padding-bottom: 14px; margin-bottom: 22px; }
+  p { font-size: 21px; line-height: 1.95; text-align: justify; margin: 0 0 16px; }
+  .lead::first-letter { font-size: 64px; float: left; line-height: .9; padding: 6px 8px 0 0; color: #7a2e2e; }
+  figure.floated-right { width: 310px; margin: 4px 0 14px 24px; }
+  figure.floated-right .ph { height: 210px; border-radius: 4px; }
+  figcaption { font-size: 15px; color: #6f6250; line-height: 1.5; text-align: left; }
+  .note {
+    background: #fffaf0; border: 1px solid #d8c7a8; border-left: 5px solid #a8792f;
+    padding: 16px 20px; margin: 26px 0; font-size: 18px; line-height: 1.8; color: #4a3d28;
+  }
+  .pull { font-size: 27px; line-height: 1.6; text-align: center; color: #6d2a2a;
+          border-top: 1px solid #cbbda4; border-bottom: 1px solid #cbbda4; padding: 18px 10px; margin: 26px 0; }
+  .page-no { text-align: center; font-size: 15px; color: #6f6250; margin-top: 28px; }
+  .rule-thin { border: 0; border-top: 1px solid #cbbda4; margin: 22px 0; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead" data-region="masthead" data-kind="chrome" data-order="1">
+    <div class="name">山 海 周 刊</div>
+    <div class="sub">人文 · 科技 · 阅读 &nbsp;|&nbsp; 2026 年 10 月 第 41 期</div>
+  </header>
+
+  <h1 data-region="title" data-kind="title" data-order="2">把一张长图，读成一篇文章</h1>
+  <div class="byline" data-region="byline" data-kind="text" data-order="3">
+    本报记者 林一 &nbsp;·&nbsp; 版面实验专栏 &nbsp;·&nbsp; 阅读约 7 分钟
+  </div>
+
+  <p class="lead" data-region="p1" data-kind="text" data-order="4">
+    第一次在手机上打开那张长图时，大多数人的动作是一样的：双指放大，左右拖动，读三行，
+    再找回原来的位置。图片没有坏，字也没有少，只是它被放在了一个不适合它的宽度里。
+  </p>
+
+  <figure class="floated-right" data-region="fig1" data-kind="figure" data-order="5">
+    <div class="ph ph--paper" data-label="FIG 1" role="img" aria-label="旧版阅读器示意"></div>
+    <figcaption data-region="fig1-cap" data-kind="caption" data-order="6">
+      图 1：旧版阅读器把整页按屏宽缩放，正文只剩八号字。
+    </figcaption>
+  </figure>
+
+  <p data-region="p2" data-kind="text" data-order="7">
+    重排的思路并不复杂：既然屏幕宽度是常量，就减少每一行的字数。把一条长行切成两条短行，
+    字高就能翻倍；把并排的图片和文字拆开，阅读顺序才不会在同一个横带里打架。
+  </p>
+  <p data-region="p3" data-kind="text" data-order="8">
+    真正难的是“切在哪里”。几何中点大概率落在一个汉字的笔画中间，切出来的两半都缺一笔。
+    所以每一行都要单独找字缝，宁可整页不切，也不能把字劈开。
+  </p>
+
+  <div class="pull" data-region="pull" data-kind="text" data-order="9">
+    “排版可以难看，内容不能丢。”
+  </div>
+
+  <p data-region="p4" data-kind="text" data-order="10">
+    这句话后来成了整个项目的底线。分类错了，最多是某一段没有放大；切点脏了，最多是整页退回原图。
+    只要每个像素都还在，读者永远有下一步。
+  </p>
+
+  <div class="note" data-region="note" data-kind="text" data-order="11">
+    编辑注：本文中的“重排”指把同一页的文字行重新组织成单列，不涉及 OCR、翻译或改写；
+    图片、表格、公式一律整块保留。
+  </div>
+
+  <hr class="rule-thin">
+  <p data-region="p5" data-kind="text" data-order="12">
+    下一期，我们会把这套流程放到真实的公众号长图、社交卡片和新闻门户上，看看它在哪些版面上
+    仍然会犯错，以及错误能不能被读者一眼看出来。
+  </p>
+
+  <div class="page-no" data-region="page-no" data-kind="chrome" data-order="13">— 12 —</div>
+</div>
+</body>
+</html>

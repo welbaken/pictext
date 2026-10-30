@@ -57,7 +57,10 @@ fun FigureDialog(
         bitmap = withContext(Dispatchers.Default) { source.decodeRegion(figureSrc, sample) }
     }
     DisposableEffect(bitmap) {
-        onDispose { bitmap?.recycle() }
+        // 组合期把值取成局部变量：直接在 onDispose 里读 bitmap 会读到已经替换后的新帧，
+        // 把正在显示的那张回收掉（绘制时就会抛 “trying to use a recycled bitmap”）。
+        val held = bitmap
+        onDispose { held?.takeIf { !it.isRecycled }?.recycle() }
     }
 
     Dialog(

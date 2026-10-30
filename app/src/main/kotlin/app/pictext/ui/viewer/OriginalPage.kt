@@ -5,7 +5,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -24,8 +28,10 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
 import app.pictext.image.SourceImage
 import app.pictext.image.ViewportFrame
 import app.pictext.image.ViewportImageLoader
@@ -34,7 +40,10 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * 原图模式：按视口解码，1×–5× 缩放、双击 1×/2.5×、拖动。\n *\n * `zoom` 由上层持有（底栏的 ×0.5 / ×2 与这里的双指手势共用同一个值），\n * 下限固定 1×：再缩小就比“原图尺寸”还小，没有意义。
+ * 原图模式：按视口解码，1×–5× 缩放、双击 1×/2.5×、拖动。
+ *
+ * 上下留出与阅读页一致的空带（状态栏/导航栏 + 56dp 顶栏/底栏），所以顶栏出现时不会压住图片；
+ * 顶栏本身可以像重排模式一样点正文收起（见 [ViewerScreen]）。
  *
  * 手势进行中不重新解码；停止 120ms 后只解码当前视口覆盖的源图区域，
  * 所以 1080×20000 的图也不会被整张放进内存。
@@ -55,6 +64,17 @@ fun OriginalPage(
     var initialized by remember { mutableStateOf(false) }
     var latestRatio by remember { mutableFloatStateOf(initialProgress.coerceIn(0f, 1f)) }
     val loader = remember(source) { ViewportImageLoader(source) }
+    val density = LocalDensity.current
+    // 与重排页的 contentPadding 保持一致：图片不钻到顶栏/底栏下面。
+    val topInset = with(density) { WindowInsets.statusBars.getTop(this).toDp() } + 56.dp
+    val bottomInset = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() } + 56.dp
+
+    // 视口帧换掉时立即回收上一张，避免反复缩放/拖动时把几十张整屏位图留给 GC。
+    // 注意：必须在组合期把值取成局部变量，否则 onDispose 里读到的是已经替换后的新帧。
+    DisposableEffect(loaded) {
+        val held = loaded
+        onDispose { held?.bitmap?.takeIf { !it.isRecycled }?.recycle() }
+    }
 
     val baseScale = if (viewport.width > 0) viewport.width.toFloat() / source.width else 1f
 
@@ -82,7 +102,8 @@ fun OriginalPage(
     LaunchedEffect(zoom, offset, viewport) {
         if (viewport.width <= 0 || viewport.height <= 0) return@LaunchedEffect
         delay(120)
-        loaded = loader.load(offset, baseScale * zoom, viewport)
+        // 解码失败（含 OOM/文件被回收）只显示转圈，不让异常冒到 Compose。
+        loaded = runCatching { loader.load(offset, baseScale * zoom, viewport) }.getOrNull()
     }
 
     LaunchedEffect(zoom, offset, viewport) {
@@ -101,6 +122,7 @@ fun OriginalPage(
         modifier = modifier
             .fillMaxSize()
             .background(Color(backgroundColor))
+            .padding(top = topInset, bottom = bottomInset)
             .onSizeChanged { viewport = it }
             .pointerInput(viewport) {
                 detectTransformGestures { centroid, pan, zoomChange, _ ->
@@ -108,9 +130,12 @@ fun OriginalPage(
                     val newZoom = (zoom * zoomChange).coerceIn(1f, 5f)
                     val newScale = baseScale * newZoom
                     val factor = if (oldScale > 0f) newScale / oldScale else 1f
+                    // offset 是“视口左上角在缩放后图片上的位置”，画面画在 `-offset` 处：
+                    // 手指往右/下拖，画面要跟着往右/下走，所以视口要减掉 pan；加 pan 会变成
+                    // “手指往右、图片往左”的镜像拖动。缩放部分仍以两指中点为锚点。
                     val next = Offset(
-                        (offset.x + centroid.x) * factor - centroid.x + pan.x,
-                        (offset.y + centroid.y) * factor - centroid.y + pan.y,
+                        (offset.x + centroid.x) * factor - centroid.x - pan.x,
+                        (offset.y + centroid.y) * factor - centroid.y - pan.y,
                     )
                     zoom = newZoom
                     offset = clampOffset(next, newZoom)

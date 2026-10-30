@@ -1,7 +1,8 @@
 # 图读 PicText · 设计文档与实施计划
 
 > 把别人分享过来的、字很小的长图，按行切成左右两半再插回去，让小屏幕上的字放大一倍。
-> 不 OCR、不联网、不上模型，纯端侧传统图像处理。
+> v1 不 OCR、不联网、不上模型，纯端侧传统图像处理；v2 可选一个约 4.8MB 的版面模型，
+> 只负责“哪些块、谁先谁后”，行切分与字缝仍由投影负责，仍然不联网。
 
 ![重排前后对比](docs/assets/compare.png)
 
@@ -19,6 +20,11 @@ v1.1 起多了三层护栏，见 [06 的 §0.1](docs/06-next-steps.md)：
 2. **行级角色**（BODY / HEADING / CAPTION / UI）：头像、按钮行、时间戳不再被当成正文切开；
 3. **全页一个 `bodyScale`**：正文、引用统一倍率，标题不小于正文，UI 行最多 1.5×；没有收益（`gain < 1.25`）就直接看原图，不再输出 1.03× 的“伪重排”。
 
+v2 的计划在 [07 · V2 计划](docs/07-v2-plan.md)：用版面模型给区域和阅读顺序，用投影给像素级行带与切点，
+再用覆盖审计保证不丢内容；字号统一为一个倍率，CJK 正文允许每行一次“强制切”，数字/URL/代码不切。
+配套的 12 张 HTML 版面夹具（浅色/纸纹/深色/双栏/长图/海报/紧排/敏感文本）在 `testdata/layout/`，
+带 DOM 真值，可离线重渲染。
+
 这正好回答了你最初的疑问：
 
 > 有没有算法可以在不要求 OCR 识别文字内容的前提下，判断哪些可能是文字、切行、左右对半、按行插回？
@@ -31,7 +37,7 @@ v1.1 起多了三层护栏，见 [06 的 §0.1](docs/06-next-steps.md)：
 
 | # | 决策 | 理由 |
 |---|------|------|
-| D1 | **纯 Kotlin 实现算法**，不引入 OpenCV、不引入任何模型 | OpenCV 会让 APK 增加 40MB+，还要处理 ABI 分包；本场景只需要整型循环，性能足够 |
+| D1 | **v1 纯 Kotlin 实现算法**，不引入 OpenCV、不引入任何模型；**v2 由 D-V2-2 取代**：引入约 4.8MB 的版面模型，但只给区域/顺序，几何仍走投影 | OpenCV 会让 APK 增加 40MB+；模型只补 v1 缺的“区域语义”，不替代像素级切行 |
 | D2 | **默认左右两栏（K=2）**，切点逐行吸附到"字缝"，不是几何中点 | 中点极可能劈开一个汉字；中文每 15~25px 必有字缝，逐行找缝的代价很低 |
 | D3 | **非文字块整体放大、绝不切分**，宽度最多放到栏宽 | 图表被切开就失去意义；宁可排版难看，不可丢内容 |
 | D4 | **不做"一整张重排长图"**，改为按需瓦片渲染 + `LazyColumn` 虚拟化 | 1080×20000 的 ARGB 位图约 86MB，必然 OOM；虚拟化后峰值 < 40MB |
@@ -56,6 +62,7 @@ v1.1 起多了三层护栏，见 [06 的 §0.1](docs/06-next-steps.md)：
 | [04 实施计划](docs/04-plan.md) | M0–M5 里程碑、20 张任务卡、验收标准、并行边界 | 项目负责人 / agent |
 | [05 测试](docs/05-testing.md) | 单元/黄金图/真实图片回归/批量评分、性能基准、模拟器与真机清单 | 做 QA 的 agent |
 | [06 下一步](docs/06-next-steps.md) | 三张真实图片的复盘、P0–P2 任务卡、验收指标 | 项目负责人 / agent |
+| [07 V2 计划](docs/07-v2-plan.md) | 版面模型 + 阅读顺序 + 强制切 + HTML 夹具、M0–M5、任务卡、验收 | 所有人，v2 开工前读 |
 
 ---
 
@@ -97,7 +104,9 @@ python prototype/reflow_prototype.py --make-fixture
 ## 技术栈
 
 Kotlin 2.0.21 · AGP 8.7.3 · Gradle 8.9 · Jetpack Compose (BOM 2024.10.01) · Material 3 · minSdk 26 · targetSdk 35 · JDK 17。
-无 OpenCV、无 OCR、无 Coil、无 Hilt、无 Room、无 INTERNET 权限。
+v1：无 OpenCV、无 OCR、无模型、无 Coil、无 Hilt、无 Room、无 INTERNET 权限。
+v2（可选）：ONNX Runtime + PP-DocLayout-S（官方 4.834MB / 23 类 / 模型卡标注 Apache-2.0，ONNX 约 4.7MB），
+只在本机跑，仍然没有 INTERNET 权限；量化（FP16/INT8）在 v2.1 单独评估，不阻塞 2.0。
 
 ---
 
@@ -109,13 +118,16 @@ Kotlin 2.0.21 · AGP 8.7.3 · Gradle 8.9 · Jetpack Compose (BOM 2024.10.01) · 
 ./gradlew :core:test                 # 算法单测 + 黄金图对拍
 ./gradlew :cli:run --args="prototype/out/source.png out --out-width 1080"
 ./gradlew :app:assembleDebug         # 产出 app/build/outputs/apk/debug/app-debug.apk
-./gradlew :app:assembleRelease       # R8 + 资源压缩，检查 APK < 8MB
+./gradlew :app:assembleRelease       # R8 + 资源压缩；v1 < 8MB，v2 体积以实测为准（不设硬上限）
 ```
 
 Windows 下可用 `scripts\verify.ps1` 一次跑完单测与 debug 构建；
-`scripts\test-samples.ps1` 会用 `testdata/samples/` 下的真实截图跑 CLI，结果写到 `testdata/out/`（样例缺失时自动跳过）；
-`scripts\score-samples.ps1` 批量跑 `testdata/samples2/` 的 18 张样例并生成 `testdata/scoreboard.md`
-（人工评分写在同目录 `notes.csv` 里，`-SkipRun` 可只重算表格）。
+`scripts\test-samples.ps1` 会用 `testdata/private/samples/`（缺失时回退 `testdata/samples/`）的真实截图跑 CLI，
+结果写到 `testdata/out/`（样例缺失时自动跳过）；
+`scripts\score-samples.ps1` 批量跑 `testdata/private/samples2/`（或 `testdata/samples2/`）的 18 张样例并生成 `testdata/scoreboard.md`
+（人工评分写在同目录 `notes.csv` 里，`-SkipRun` 可只重算表格）。真实截图不随仓库分发，见 [testdata/README.md](testdata/README.md)。
+v2 的 HTML 版面夹具用 `node scripts\render-layout-fixtures.mjs` 重渲染（Edge/Chrome headless，零 npm 依赖），
+`--check` 只校验入库的 PNG 与 DOM 真值；夹具说明见 [07 · §4.11](docs/07-v2-plan.md#411-html-测试夹具与-dom-真值本地生成)。
 
 CLI 输出：
 
@@ -124,6 +136,8 @@ CLI 输出：
 - `out/plan.json`：行数、图块数、角色分布、`splitX`、`scale`/`bodyScale`、`gain`、审计结果、每个渲染项的源/目标矩形与角色。
 
 `--latin-split` 打开实验性的拉丁/URL 安全切分（默认关）。
+`--x4` 用 ×4 档的二次重排出图（字号 ×2、放不下的行再切 2/4 段，和 App 里点 ×4 一致）；
+`--dump-lines` 打印每条文字行的 band / cutX / split / cuts，调切点时用。
 `--args="summary out.png a.png b.png"` 可以把多张 after 拼成一张复核图；`scripts\test-samples.ps1`
 会用它生成 `testdata/out/summary.png`，并同时写出 `manifest.json` 与由 `plan.json` 生成的 `testdata/report.md`。
 
@@ -144,3 +158,15 @@ CLI 输出：
 - 切点不干净时整页退回 `NO_SPLIT`（只放大不切）；收益不足时退回 `ORIGINAL`；`weak_cut` 且无收益时也直接 `ORIGINAL`（不再输出伪重排）。
 - 原图模式按视口解码，1080×20000 的图不会整张进内存。
 - 所有失败路径都收敛到原图或错误页，不允许白屏/崩溃。
+
+---
+
+## 许可证
+
+本项目（代码、文档、`testdata/layout/` 下自带的 HTML 夹具与渲染结果）以 **Apache-2.0** 发布，见 [LICENSE](LICENSE)。
+
+第三方组件与模型见 [NOTICE](NOTICE) 与 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)：
+PP-DocLayout-S 为 Apache-2.0，ONNX Runtime 为 MIT，AndroidX/Compose/Kotlin 为 Apache-2.0。
+
+真实截图（Twitter/微博/新闻/Arknights 等）因版权与隐私原因**不随仓库分发**，只放在本地
+`testdata/private/`，详见 [testdata/README.md](testdata/README.md)；贡献方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。

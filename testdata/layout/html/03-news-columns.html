@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>新闻门户 · 通栏标题 + 双栏</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  body { background: #ffffff; }
+  .page { max-width: 1080px; padding: 0 40px 56px; }
+  .nav {
+    display: flex; align-items: center; gap: 20px; padding: 18px 0;
+    border-bottom: 1px solid var(--line); font-size: 17px; color: #4a4f5c;
+  }
+  .nav .brand { font-size: 24px; font-weight: 900; letter-spacing: .5px; color: #111; }
+  .nav .spacer { flex: 1; }
+  .nav a { color: #4a4f5c; text-decoration: none; }
+  .kicker { color: #b3261e; font-size: 17px; font-weight: 700; letter-spacing: 2px; margin: 26px 0 10px; }
+  h1 { font-size: 44px; line-height: 1.3; margin: 0 0 14px; letter-spacing: .3px; }
+  .standfirst { font-size: 23px; line-height: 1.7; color: #3c414d; margin: 0 0 16px; }
+  .byline { font-size: 16px; color: #737886; border-bottom: 1px solid var(--line); padding-bottom: 16px; margin-bottom: 22px; }
+  .lead { height: 400px; border-radius: 6px; }
+  .cols { display: flex; gap: 48px; align-items: flex-start; margin-top: 8px; }
+  .cols .main { flex: 1.45 1 0; min-width: 0; }
+  .cols .side { flex: 1 1 0; min-width: 0; border-left: 1px solid var(--line); padding-left: 30px; }
+  .cols p { font-size: 20px; line-height: 1.85; margin: 0 0 16px; text-align: justify; }
+  .cols h2 { font-size: 24px; line-height: 1.4; margin: 22px 0 10px; }
+  .side h3 { font-size: 20px; margin: 0 0 10px; }
+  .related { list-style: none; padding: 0; margin: 0 0 24px; }
+  .related li { padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 18px; line-height: 1.6; }
+  .related li:last-child { border-bottom: 0; }
+  .related .no { color: #b3261e; font-weight: 800; margin-right: 8px; }
+  .side .table-wrap { margin-top: 8px; }
+  .side table { font-size: 15px; }
+  .side th, .side td { padding: 8px 9px; }
+  .bottom-rule { border: 0; border-top: 3px solid #111; margin: 30px 0 10px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <nav class="nav" data-region="nav" data-kind="chrome" data-order="1">
+    <span class="brand">晨报</span>
+    <a>要闻</a><a>科技</a><a>阅读</a><a>城市</a>
+    <span class="spacer"></span><span>2026-10-29 星期四</span>
+  </nav>
+
+  <div class="kicker" data-region="kicker" data-kind="text" data-order="2">封面报道 · 数字阅读</div>
+  <h1 data-region="headline" data-kind="title" data-order="3">一块屏幕能装下多少字：移动阅读的版面实验</h1>
+  <p class="standfirst" data-region="standfirst" data-kind="text" data-order="4">
+    当长图成为信息的主要载体，读者面对的不再是“字太小”，而是“版面没有为窄屏设计”。
+    一场关于行宽、字缝与阅读顺序的实验，正在几个人的小团队里发生。
+  </p>
+  <div class="byline" data-region="byline" data-kind="text" data-order="5">
+    本报记者 周其 &nbsp;|&nbsp; 摄影 李牧 &nbsp;|&nbsp; 2026 年 10 月 29 日 08:30
+  </div>
+
+  <figure data-region="lead-fig" data-kind="figure" data-order="6">
+    <div class="lead ph ph--grid" data-label="LEAD" role="img" aria-label="移动阅读实验现场"></div>
+    <figcaption data-region="lead-cap" data-kind="caption" data-order="7">
+      图 1：实验用的一组长图，宽度从 600 到 3000 像素不等。摄影 / 李牧
+    </figcaption>
+  </figure>
+
+  <div class="cols">
+    <div class="main">
+      <p data-region="left-p1" data-kind="text" data-order="8">
+        把一张 1080 像素宽的长图放进 393dp 的手机屏幕，系统会先把它缩到屏宽。图里的 22 像素正文，
+        落到屏幕上只剩八号字；读者能做的只有放大，然后在每一次拖动之后重新找回阅读位置。
+      </p>
+      <p data-region="left-p2" data-kind="text" data-order="9">
+        重排工具试图解决的就是这一步。它不识别文字，也不改写内容，只把版面当成一张由行和块组成的图：
+        找到行，判断哪些行可以切开，再把切开的两半按阅读顺序插回一条更窄的列里。
+      </p>
+      <h2 data-region="left-h2" data-kind="title" data-order="10">字缝比中点可靠</h2>
+      <p data-region="left-p3" data-kind="text" data-order="11">
+        最直接的做法是从中间切。但中文正文按字格排列，几何中点大概率落在一个字的笔画中间；
+        切出来的左半缺一笔，右半也缺一笔。正确的切点必须落在字与字之间的空白里。
+      </p>
+      <p data-region="left-p4" data-kind="text" data-order="12">
+        逐行找缝的代价并不高：一行 46 个字，只需要在中心附近扫几十列像素。真正昂贵的是判断
+        “这一行该不该切”——标题、图注、按钮行、头像行，都不应该参与切分。
+      </p>
+      <div class="quote" data-region="left-quote" data-kind="text" data-order="13">
+        “如果切点不干净，整页退回原图。用户最多觉得没效果，不会读到半截字。”
+      </div>
+      <p data-region="left-p5" data-kind="text" data-order="14">
+        这套保守策略让工具在复杂版面上显得笨拙，却也保证了它不会安静地做错事。对阅读工具来说，
+        不丢内容比多放大一倍更重要。
+      </p>
+    </div>
+
+    <aside class="side">
+      <h3 data-region="side-title" data-kind="title" data-order="15">相关阅读</h3>
+      <ul class="related" data-region="side-list" data-kind="text" data-order="16">
+        <li><span class="no">01</span>为什么手机上的正文越来越小</li>
+        <li><span class="no">02</span>从投影分析到版面模型：一次克制的手术</li>
+        <li><span class="no">03</span>排版工具的失败学：宁可退回原图</li>
+      </ul>
+      <h3 data-region="table-title" data-kind="title" data-order="17">实测数据</h3>
+      <div class="table-wrap" data-region="table" data-kind="table" data-order="18">
+        <table>
+          <thead><tr><th>输入</th><th>分析</th><th>首屏</th></tr></thead>
+          <tbody>
+            <tr><td>1080×2400</td><td>98ms</td><td>420ms</td></tr>
+            <tr><td>1080×20000</td><td>1.4s</td><td>1.1s</td></tr>
+            <tr><td>1920×1080</td><td>210ms</td><td>640ms</td></tr>
+            <tr><td>600×800</td><td>46ms</td><td>260ms</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="meta" style="margin-top:10px">数据来自中端机，三次取中位数。</p>
+    </aside>
+  </div>
+
+  <hr class="bottom-rule">
+  <div class="meta" data-region="footer" data-kind="chrome" data-order="19">晨报 · 数字阅读版 &nbsp;|&nbsp; 第 3 版 &nbsp;|&nbsp; 编辑 周其</div>
+</div>
+</body>
+</html>

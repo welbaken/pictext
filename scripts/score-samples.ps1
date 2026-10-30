@@ -1,11 +1,12 @@
-﻿# 批量跑样例目录，生成 scoreboard（docs/06 P1-2）。
+# 批量跑样例目录，生成 scoreboard（docs/06 P1-2）。
 #
+# 真实截图不随仓库分发：不传 -Dir 时优先 testdata/private/samples2，其次 testdata/samples2。
 # 用法：powershell -ExecutionPolicy Bypass -File scripts/score-samples.ps1 [-Dir testdata/samples2] [-Out testdata/scoreboard.md] [-OutWidth 1080]
 #
 # 只做“自动部分”：逐张跑 CLI，收集 plan.json 的结构值与审计结果；
 # “可用 / 勉强 / 不可用”的评分列留空，供人工填。
 param(
-    [string]$Dir = "testdata/samples2",
+    [string]$Dir = "",
     [string]$Out = "testdata/scoreboard.md",
     [int]$OutWidth = 1080,
     [int]$Limit = 0,
@@ -15,6 +16,9 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
+    if ([string]::IsNullOrWhiteSpace($Dir)) {
+        $Dir = if (Test-Path "testdata/private/samples2") { "testdata/private/samples2" } else { "testdata/samples2" }
+    }
     if (-not (Test-Path $Dir)) { throw "样例目录不存在：$Dir" }
     $files = Get-ChildItem $Dir -File | Where-Object { $_.Extension -match '^\.(jpg|jpeg|png|webp)$' } | Sort-Object Name
     # 人工评分：与样例同目录的 notes.csv（name,score,note），存在就合并进表格。

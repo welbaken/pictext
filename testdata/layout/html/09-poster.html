@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>海报 · 文字叠图（硬负样例）</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  body { background: #0b0c10; }
+  .poster {
+    position: relative; width: 100%; max-width: 1080px; height: 1600px; margin: 0 auto;
+    overflow: hidden; color: #fff;
+    background:
+      radial-gradient(circle at 78% 16%, rgba(255, 196, 86, .85) 0 9%, transparent 10%),
+      radial-gradient(circle at 18% 78%, rgba(94, 214, 255, .55) 0 14%, transparent 15%),
+      linear-gradient(155deg, #131a2b 0%, #1d2b4a 38%, #3a2350 68%, #120f1c 100%);
+  }
+  .content { position: relative; padding: 92px 74px; }
+  .kicker { font-size: 22px; letter-spacing: 6px; color: #ffd36e; margin-bottom: 26px; }
+  h1 { font-size: 86px; line-height: 1.16; margin: 0 0 22px; letter-spacing: 2px; text-shadow: 0 4px 30px rgba(0,0,0,.35); }
+  h1 em { font-style: normal; color: #ffd36e; }
+  .sub { font-size: 30px; line-height: 1.6; color: #e8ecf8; margin: 0 0 46px; max-width: 760px; }
+  .lineup { border-top: 1px solid rgba(255,255,255,.28); padding-top: 26px; max-width: 620px; }
+  .lineup .row { display: flex; gap: 22px; font-size: 26px; line-height: 1.7; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.14); }
+  .lineup .time { color: #ffd36e; font-variant-numeric: tabular-nums; width: 120px; flex: 0 0 auto; }
+  .info { position: absolute; left: 74px; bottom: 92px; font-size: 22px; line-height: 1.7; color: #dfe5f5; }
+  .info b { color: #fff; }
+  .qr {
+    position: absolute; right: 80px; bottom: 92px; width: 168px; height: 168px;
+    background:
+      linear-gradient(90deg, #111 8px, transparent 8px) 0 0 / 24px 24px,
+      linear-gradient(#111 8px, transparent 8px) 0 0 / 24px 24px,
+      #fff;
+    border: 10px solid #fff; border-radius: 12px;
+  }
+  .stamp {
+    position: absolute; right: 66px; top: 100px;
+    width: 132px; height: 132px; border: 3px solid rgba(255,255,255,.5); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; letter-spacing: 3px; color: rgba(255,255,255,.85);
+    transform: rotate(-12deg);
+  }
+</style>
+</head>
+<body>
+<div class="poster">
+  <div class="content">
+    <div class="kicker" data-region="kicker" data-kind="text" data-order="1">2026 · 秋 ／ 版面实验展</div>
+    <h1 data-region="title" data-kind="title" data-order="2">把长图<br><em>读成文章</em></h1>
+    <p class="sub" data-region="sub" data-kind="text" data-order="3">
+      一次关于行宽、字缝与阅读顺序的展览。现场提供 20 张真实长图，<br>
+      你可以亲手把一张图重排成单列，再决定它是否更好读。
+    </p>
+    <div class="lineup" data-region="lineup" data-kind="text" data-order="4">
+      <div class="row"><span class="time">10:00</span><span>开场 · 为什么手机上的字越来越小</span></div>
+      <div class="row"><span class="time">13:30</span><span>拆解 · 一行字从哪里切开</span></div>
+      <div class="row"><span class="time">16:00</span><span>对谈 · 模型应该知道多少</span></div>
+    </div>
+  </div>
+  <div class="stamp" data-region="stamp" data-kind="ui" data-order="7">限定 300 席</div>
+  <div class="info" data-region="info" data-kind="text" data-order="5">
+    <b>10 月 31 日 — 11 月 2 日</b><br>
+    城市美术馆 · 三层 A 厅<br>
+    免费入场 · 需预约
+  </div>
+  <div class="qr" data-region="qr" data-kind="figure" data-order="6" role="img" aria-label="预约二维码"></div>
+</div>
+</body>
+</html>

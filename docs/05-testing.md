@@ -55,8 +55,8 @@ fun `深色图块不会被当成背景`() {
 
 ## 2b. 真实图片回归（v1.1）
 
-`core/src/test/.../RealImageRegressionTest.kt` 直接读 `testdata/samples/`（用 Gradle 传
-`-Dpictext.root=<仓库根>`，不复制图片），对 4 张样例断言**结构区间**而不是像素：
+`core/src/test/.../RealImageRegressionTest.kt` 直接读 `testdata/private/samples/`（或
+`testdata/samples/`，用 Gradle 传 `-Dpictext.root=<仓库根>`，不复制图片），对 4 张样例断言**结构区间**而不是像素：
 
 | 样例 | 断言 |
 |---|---|
@@ -65,8 +65,25 @@ fun `深色图块不会被当成背景`() {
 | xerj | 不允许 1.0–1.25× 伪重排：要么 `ORIGINAL`，要么 `gain ≥ 1.5` 且审计 ok |
 | arknights | 固定 `ORIGINAL`、无渲染项、不崩溃 |
 
-样例缺失时用 JUnit `assumeTrue` 跳过（CI 未带 testdata 也不会红）。每次运行都会打印一行
+样例缺失时用 JUnit `assumeTrue` 跳过（CI 未带真实截图也不会红）；真实截图因版权/隐私原因
+不随仓库分发，放到 `testdata/private/samples/` 即可被自动发现。每次运行都会打印一行
 `sample=… lines=… figures=… roles=… audit=[…]`，可直接贴进报告。
+
+## 2c. HTML 版面夹具与 DOM 真值（v2）
+
+`testdata/layout/` 下有 12 张本地 HTML 版面（浅色卡片、纸纹、双栏新闻、社交卡片、聊天、电商、
+1920 仪表盘、深色、海报、7,539px 长信息流、论文双栏、紧排+敏感文本），每张都带 `data-region` 标注：
+
+- `scripts/render-layout-fixtures.mjs` 用 Edge/Chrome headless + CDP 截整页，同时导出
+  `ground-truth/<id>@<width>.json`（区域框、逐行矩形、`data-order`、`sensitive`）；
+- PNG 与真值入库，`--check` 只校验尺寸/哈希/越界，CI 不需要浏览器；
+- 纯 Kotlin 测试不需要模型：`FixtureOrderTest` 用真值框测 XY-cut；`FixtureComposerTest`
+  用真值行测规划；`FixtureCutPolicyTest` 测“紧排只坏一个字、敏感行零强制”；
+- 模型回归是可选/nightly：同一张 PNG 跑检测器，与真值比区域召回、行覆盖、顺序。
+
+夹具说明与生成命令见 [07 · §4.11](07-v2-plan.md#411-html-测试夹具与-dom-真值本地生成)。
+模型官方 mAP(0.5)=70.9 是 500 张文档图的评估值，不能当截图精度；量化评估见 07 的 V2-42，
+不参与 v2.0 发布门。
 
 ## 3. 黄金测试
 
@@ -182,7 +199,7 @@ fun `深色图块不会被当成背景`() {
 
 ```powershell
 # 自动跑一遍目录里的所有图片，生成评分表骨架
-powershell -ExecutionPolicy Bypass -File scripts/score-samples.ps1 -Dir testdata/samples2
+powershell -ExecutionPolicy Bypass -File scripts/score-samples.ps1 -Dir testdata/private/samples2
 
 # 只重新生成表格（复用上次的 plan.json，不重跑 CLI）
 powershell -ExecutionPolicy Bypass -File scripts/score-samples.ps1 -SkipRun
@@ -192,7 +209,7 @@ powershell -ExecutionPolicy Bypass -File scripts/score-samples.ps1 -SkipRun
 - 人工评分写在同目录的 `notes.csv`（`name,score,note`），脚本会合并进表格，重新生成不会丢；
 - 文件名带空格/中文时脚本会先复制成安全名字再交给 CLI（`--args` 按空格切分）。
 
-当前 `testdata/samples2` 18 张：重排 11、回退 7、审计失败 0；人工评分 可用 11 / 勉强 4 / 不可用 0。
+当前 `testdata/private/samples2` 18 张：重排 11、回退 7、审计失败 0；人工评分 可用 11 / 勉强 4 / 不可用 0。
 
 ### 6c. 模拟器功能验收（2026-10-29，MuMu Android 15）
 
@@ -211,7 +228,12 @@ powershell -ExecutionPolicy Bypass -File scripts/score-samples.ps1 -SkipRun
 | 设置面板 | ✓ 字号（小/标准/大）与切分方式可见可选，关闭后回到阅读页 |
 | 低收益回退 | ✓ 在 1920 宽窗口下 gain=1.11 → `ORIGINAL / GAIN_TOO_SMALL`，提示"文字已经足够大，不需要重排" |
 | 首页精简（v1.1） | ✓ 标题与"选择图片"之间不再有说明文字 |
-| 三档（原图 / ×2 / ×4） | ✓ 分享进入自动落在 ×2；点 ×4 后倍率翻倍（2.39 → 4.78）；点原图回到 1× |
+| 三档（原图 / ×2 / ×4） | ✓ 分享进入自动落在 ×2；点 ×4 后倍率翻倍（2.39 → 4.78）**且重新切行**（21 → 31 项、同页 BODY 字号偏差 ≤2%）；点原图回到 1×；换档后阅读比例保持 |
+| 原图拖动方向 | ✓ 手指往右/下拖，画面跟着往右/下走（放大后亦然），不再反向 |
+| 顶栏精简（0.2.2） | ✓ 右上角不再有"原图"和"⋮"，只剩返回 + 标题；关于入口移到首页 |
+| 原图模式不被压住 | ✓ 图片上下留出 56dp + 系统栏空带；点正文可收起顶栏（之前顶栏强制显示） |
+| 重排双指缩放 | ✓ ×2 上双指放大 → 字号变大且逐行重切、底栏高亮跳到 ×4；×4 上双指缩小 → 回到 ×2；单指滚动/翻页不受影响 |
+| ×4 稳定性 | ✓ 连续 10 轮"捏合放大/缩小 + 快速上下甩动"后进程存活、无 FATAL、内存 PSS ≈ 34MB |
 | 设置入口移除（v1.1） | ✓ 底栏无 "Aa"、⋮ 菜单只剩"关于"、SettingsSheet.kt 已删除 |
 
 ## 7. 异常输入矩阵

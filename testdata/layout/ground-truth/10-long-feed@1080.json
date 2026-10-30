@@ -1,0 +1,950 @@
+{
+  "schema": 1,
+  "id": "10-long-feed",
+  "html": "html/10-long-feed.html",
+  "width": 1080,
+  "height": 7539,
+  "scale": 1,
+  "tags": [
+    "long",
+    "tiling",
+    "feed",
+    "card",
+    "repeated"
+  ],
+  "orderStrict": true,
+  "note": "14 条重复信息流（约 8k–9k 高），用于 tile 网格、跨 tile 去重、长图内存。",
+  "viewport": {
+    "w": 1080,
+    "h": 900,
+    "dpr": 1
+  },
+  "doc": {
+    "w": 1080,
+    "h": 7539
+  },
+  "regions": [
+    {
+      "id": "feed-head",
+      "kind": "chrome",
+      "order": 1,
+      "box": {
+        "x": 36,
+        "y": 18,
+        "w": 1008,
+        "h": 69
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c1-head",
+      "kind": "ui",
+      "order": 2,
+      "box": {
+        "x": 61,
+        "y": 128,
+        "w": 958,
+        "h": 44.4
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c1-body",
+      "kind": "text",
+      "order": 3,
+      "box": {
+        "x": 61,
+        "y": 184.4,
+        "w": 958,
+        "h": 36.8
+      },
+      "inkBox": {
+        "x": 61,
+        "y": 188.4,
+        "w": 780,
+        "h": 27
+      },
+      "lines": [
+        {
+          "x": 61,
+          "y": 188.4,
+          "w": 780,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "c1-fig",
+      "kind": "figure",
+      "order": 4,
+      "box": {
+        "x": 61,
+        "y": 233.1,
+        "w": 958,
+        "h": 300
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c1-actions",
+      "kind": "ui",
+      "order": 5,
+      "box": {
+        "x": 61,
+        "y": 545.1,
+        "w": 958,
+        "h": 41
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c2-head",
+      "kind": "ui",
+      "order": 6,
+      "box": {
+        "x": 61,
+        "y": 650.1,
+        "w": 958,
+        "h": 44.4
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c2-body",
+      "kind": "text",
+      "order": 7,
+      "box": {
+        "x": 61,
+        "y": 706.5,
+        "w": 958,
+        "h": 36.8
+      },
+      "inkBox": {
+        "x": 61,
+        "y": 710.5,
+        "w": 735,
+        "h": 27
+      },
+      "lines": [
+        {
+          "x": 61,
+          "y": 710.5,
+          "w": 735,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "c2-fig",
+      "kind": "figure",
+      "order": 8,
+      "box": {
+        "x": 61,
+        "y": 755.3,
+        "w": 958,
+        "h": 300
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c2-actions",
+      "kind": "ui",
+      "order": 9,
+      "box": {
+        "x": 61,
+        "y": 1067.3,
+        "w": 958,
+        "h": 41
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c3-head",
+      "kind": "ui",
+      "order": 10,
+      "box": {
+        "x": 61,
+        "y": 1172.3,
+        "w": 958,
+        "h": 44.4
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c3-body",
+      "kind": "text",
+      "order": 11,
+      "box": {
+        "x": 61,
+        "y": 1228.7,
+        "w": 958,
+        "h": 36.8
+      },
+      "inkBox": {
+        "x": 61,
+        "y": 1232.7,
+        "w": 693,
+        "h": 27
+      },
+      "lines": [
+        {
+          "x": 61,
+          "y": 1232.7,
+          "w": 693,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "c3-fig",
+      "kind": "figure",
+      "order": 12,
+      "box": {
+        "x": 61,
+        "y": 1277.4,
+        "w": 958,
+        "h": 300
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c3-actions",
+      "kind": "ui",
+      "order": 13,
+      "box": {
+        "x": 61,
+        "y": 1589.4,
+        "w": 958,
+        "h": 41
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c4-head",
+      "kind": "ui",
+      "order": 14,
+      "box": {
+        "x": 61,
+        "y": 1694.4,
+        "w": 958,
+        "h": 44.4
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c4-body",
+      "kind": "text",
+      "order": 15,
+      "box": {
+        "x": 61,
+        "y": 1750.8,
+        "w": 958,
+        "h": 36.8
+      },
+      "inkBox": {
+        "x": 61,
+        "y": 1754.8,
+        "w": 819,
+        "h": 27
+      },
+      "lines": [
+        {
+          "x": 61,
+          "y": 1754.8,
+          "w": 819,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "c4-fig",
+      "kind": "figure",
+      "order": 16,
+      "box": {
+        "x": 61,
+        "y": 1799.6,
+        "w": 958,
+        "h": 300
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c4-actions",
+      "kind": "ui",
+      "order": 17,
+      "box": {
+        "x": 61,
+        "y": 2111.6,
+        "w": 958,
+        "h": 41
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c5-head",
+      "kind": "ui",
+      "order": 18,
+      "box": {
+        "x": 61,
+        "y": 2216.6,
+        "w": 958,
+        "h": 44.4
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c5-body",
+      "kind": "text",
+      "order": 19,
+      "box": {
+        "x": 61,
+        "y": 2273,
+        "w": 958,
+        "h": 36.8
+      },
+      "inkBox": {
+        "x": 61,
+        "y": 2277,
+        "w": 672,
+        "h": 27
+      },
+      "lines": [
+        {
+          "x": 61,
+          "y": 2277,
+          "w": 672,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "c5-fig",
+      "kind": "figure",
+      "order": 20,
+      "box": {
+        "x": 61,
+        "y": 2321.7,
+        "w": 958,
+        "h": 300
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c5-actions",
+      "kind": "ui",
+      "order": 21,
+      "box": {
+        "x": 61,
+        "y": 2633.7,
+        "w": 958,
+        "h": 41
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c6-head",
+      "kind": "ui",
+      "order": 22,
+      "box": {
+        "x": 61,
+        "y": 2738.7,
+        "w": 958,
+        "h": 44.4
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c6-body",
+      "kind": "text",
+      "order": 23,
+      "box": {
+        "x": 61,
+        "y": 2795.1,
+        "w": 958,
+        "h": 36.8
+      },
+      "inkBox": {
+        "x": 61,
+        "y": 2799.1,
+        "w": 742.2,
+        "h": 27
+      },
+      "lines": [
+        {
+          "x": 61,
+          "y": 2799.1,
+          "w": 742.2,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "c6-fig",
+      "kind": "figure",
+      "order": 24,
+      "box": {
+        "x": 61,
+        "y": 2843.8,
+        "w": 958,
+        "h": 300
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c6-actions",
+      "kind": "ui",
+      "order": 25,
+      "box": {
+        "x": 61,
+        "y": 3155.8,
+        "w": 958,
+        "h": 41
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c7-head",
+      "kind": "ui",
+      "order": 26,
+      "box": {
+        "x": 61,
+        "y": 3260.8,
+        "w": 958,
+        "h": 44.4
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c7-body",
+      "kind": "text",
+      "order": 27,
+      "box": {
+        "x": 61,
+        "y": 3317.2,
+        "w": 958,
+        "h": 36.8
+      },
+      "inkBox": {
+        "x": 61,
+        "y": 3321.2,
+        "w": 780,
+        "h": 27
+      },
+      "lines": [
+        {
+          "x": 61,
+          "y": 3321.2,
+          "w": 780,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "c7-fig",
+      "kind": "figure",
+      "order": 28,
+      "box": {
+        "x": 61,
+        "y": 3366,
+        "w": 958,
+        "h": 300
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c7-actions",
+      "kind": "ui",
+      "order": 29,
+      "box": {
+        "x": 61,
+        "y": 3678,
+        "w": 958,
+        "h": 41
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c8-head",
+      "kind": "ui",
+      "order": 30,
+      "box": {
+        "x": 61,
+        "y": 3783,
+        "w": 958,
+        "h": 44.4
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c8-body",
+      "kind": "text",
+      "order": 31,
+      "box": {
+        "x": 61,
+        "y": 3839.4,
+        "w": 958,
+        "h": 36.8
+      },
+      "inkBox": {
+        "x": 61,
+        "y": 3843.4,
+        "w": 735,
+        "h": 27
+      },
+      "lines": [
+        {
+          "x": 61,
+          "y": 3843.4,
+          "w": 735,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "c8-fig",
+      "kind": "figure",
+      "order": 32,
+      "box": {
+        "x": 61,
+        "y": 3888.1,
+        "w": 958,
+        "h": 300
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c8-actions",
+      "kind": "ui",
+      "order": 33,
+      "box": {
+        "x": 61,
+        "y": 4200.1,
+        "w": 958,
+        "h": 41
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c9-head",
+      "kind": "ui",
+      "order": 34,
+      "box": {
+        "x": 61,
+        "y": 4305.1,
+        "w": 958,
+        "h": 44.4
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c9-body",
+      "kind": "text",
+      "order": 35,
+      "box": {
+        "x": 61,
+        "y": 4361.5,
+        "w": 958,
+        "h": 36.8
+      },
+      "inkBox": {
+        "x": 61,
+        "y": 4365.5,
+        "w": 693,
+        "h": 27
+      },
+      "lines": [
+        {
+          "x": 61,
+          "y": 4365.5,
+          "w": 693,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "c9-fig",
+      "kind": "figure",
+      "order": 36,
+      "box": {
+        "x": 61,
+        "y": 4410.3,
+        "w": 958,
+        "h": 300
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c9-actions",
+      "kind": "ui",
+      "order": 37,
+      "box": {
+        "x": 61,
+        "y": 4722.3,
+        "w": 958,
+        "h": 41
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c10-head",
+      "kind": "ui",
+      "order": 38,
+      "box": {
+        "x": 61,
+        "y": 4827.3,
+        "w": 958,
+        "h": 44.4
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c10-body",
+      "kind": "text",
+      "order": 39,
+      "box": {
+        "x": 61,
+        "y": 4883.7,
+        "w": 958,
+        "h": 36.8
+      },
+      "inkBox": {
+        "x": 61,
+        "y": 4887.7,
+        "w": 819,
+        "h": 27
+      },
+      "lines": [
+        {
+          "x": 61,
+          "y": 4887.7,
+          "w": 819,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "c10-fig",
+      "kind": "figure",
+      "order": 40,
+      "box": {
+        "x": 61,
+        "y": 4932.4,
+        "w": 958,
+        "h": 300
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c10-actions",
+      "kind": "ui",
+      "order": 41,
+      "box": {
+        "x": 61,
+        "y": 5244.4,
+        "w": 958,
+        "h": 41
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c11-head",
+      "kind": "ui",
+      "order": 42,
+      "box": {
+        "x": 61,
+        "y": 5349.4,
+        "w": 958,
+        "h": 44.4
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c11-body",
+      "kind": "text",
+      "order": 43,
+      "box": {
+        "x": 61,
+        "y": 5405.8,
+        "w": 958,
+        "h": 36.8
+      },
+      "inkBox": {
+        "x": 61,
+        "y": 5409.8,
+        "w": 672,
+        "h": 27
+      },
+      "lines": [
+        {
+          "x": 61,
+          "y": 5409.8,
+          "w": 672,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "c11-fig",
+      "kind": "figure",
+      "order": 44,
+      "box": {
+        "x": 61,
+        "y": 5454.5,
+        "w": 958,
+        "h": 300
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c11-actions",
+      "kind": "ui",
+      "order": 45,
+      "box": {
+        "x": 61,
+        "y": 5766.5,
+        "w": 958,
+        "h": 41
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c12-head",
+      "kind": "ui",
+      "order": 46,
+      "box": {
+        "x": 61,
+        "y": 5871.5,
+        "w": 958,
+        "h": 44.4
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c12-body",
+      "kind": "text",
+      "order": 47,
+      "box": {
+        "x": 61,
+        "y": 5927.9,
+        "w": 958,
+        "h": 36.8
+      },
+      "inkBox": {
+        "x": 61,
+        "y": 5931.9,
+        "w": 742.2,
+        "h": 27
+      },
+      "lines": [
+        {
+          "x": 61,
+          "y": 5931.9,
+          "w": 742.2,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "c12-fig",
+      "kind": "figure",
+      "order": 48,
+      "box": {
+        "x": 61,
+        "y": 5976.7,
+        "w": 958,
+        "h": 300
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c12-actions",
+      "kind": "ui",
+      "order": 49,
+      "box": {
+        "x": 61,
+        "y": 6288.7,
+        "w": 958,
+        "h": 41
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c13-head",
+      "kind": "ui",
+      "order": 50,
+      "box": {
+        "x": 61,
+        "y": 6393.7,
+        "w": 958,
+        "h": 44.4
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c13-body",
+      "kind": "text",
+      "order": 51,
+      "box": {
+        "x": 61,
+        "y": 6450.1,
+        "w": 958,
+        "h": 36.8
+      },
+      "inkBox": {
+        "x": 61,
+        "y": 6454.1,
+        "w": 780,
+        "h": 27
+      },
+      "lines": [
+        {
+          "x": 61,
+          "y": 6454.1,
+          "w": 780,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "c13-fig",
+      "kind": "figure",
+      "order": 52,
+      "box": {
+        "x": 61,
+        "y": 6498.8,
+        "w": 958,
+        "h": 300
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c13-actions",
+      "kind": "ui",
+      "order": 53,
+      "box": {
+        "x": 61,
+        "y": 6810.8,
+        "w": 958,
+        "h": 41
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c14-head",
+      "kind": "ui",
+      "order": 54,
+      "box": {
+        "x": 61,
+        "y": 6915.8,
+        "w": 958,
+        "h": 44.4
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c14-body",
+      "kind": "text",
+      "order": 55,
+      "box": {
+        "x": 61,
+        "y": 6972.2,
+        "w": 958,
+        "h": 36.8
+      },
+      "inkBox": {
+        "x": 61,
+        "y": 6976.2,
+        "w": 735,
+        "h": 27
+      },
+      "lines": [
+        {
+          "x": 61,
+          "y": 6976.2,
+          "w": 735,
+          "h": 27
+        }
+      ]
+    },
+    {
+      "id": "c14-fig",
+      "kind": "figure",
+      "order": 56,
+      "box": {
+        "x": 61,
+        "y": 7021,
+        "w": 958,
+        "h": 300
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "c14-actions",
+      "kind": "ui",
+      "order": 57,
+      "box": {
+        "x": 61,
+        "y": 7333,
+        "w": 958,
+        "h": 41
+      },
+      "inkBox": null,
+      "lines": []
+    },
+    {
+      "id": "feed-end",
+      "kind": "chrome",
+      "order": 999,
+      "box": {
+        "x": 36,
+        "y": 7415,
+        "w": 1008,
+        "h": 74.3
+      },
+      "inkBox": null,
+      "lines": []
+    }
+  ]
+}

@@ -35,6 +35,17 @@ class ColumnInk(val left: Int, val counts: IntArray) {
     /** 墨簇（连续的“有墨列”）在剖面内的区间。 */
     fun clusters(): List<IntRange> = clusterCache
 
+    /**
+     * 低墨列阈值：`max(1, 0.10 × 非零列墨量中位数)`。
+     *
+     * 找字缝时用它判“低墨列组”。一次分析里同一条行会被找好几次刀（×2 一刀、×4 二次
+     * 重排两刀），所以缓存下来，避免每次都排序整条剖面。
+     */
+    val lowInkThreshold: Float by lazy {
+        val positive = counts.filter { it > 0 }.sorted()
+        if (positive.isEmpty()) 1f else max(1f, 0.10f * positive[positive.size / 2])
+    }
+
     /** 墨簇宽度中位数；没有墨簇时为 0。 */
     fun medianClusterWidth(): Float {
         val c = clusterCache

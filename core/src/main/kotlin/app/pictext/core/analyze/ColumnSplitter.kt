@@ -136,20 +136,15 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
                 splitCount++
                 if (isSplit && inkAt <= 1.5f) clean++
             }
-            // [v1.1] ×4 模式：在左右半行里再各找一刀，凑成 4 段（A1a/A1b/A2a/A2b）。
-            // 两刀都找到才启用，否则回退成 2 段——宁可少切，不要切在字上。
-            var extraCuts: List<Int> = emptyList()
-            if (isSplit && options.splitSegments >= 4) {
-                val exempt = exemptFor(line)
-                val l = line.band.left
-                val r = line.band.right
-                val c2 = chooseCut(profile(line), (l + cutX) / 2, max(3, (cutX - l) / 2 - 2), medH, exempt)?.first ?: -1
-                val c3 = chooseCut(profile(line), (cutX + r) / 2, max(3, (r - cutX) / 2 - 2), medH, exempt)?.first ?: -1
-                if (c2 > l && c2 < cutX && c3 > cutX && c3 < r) {
-                    extraCuts = listOf(c2, cutX, c3)
-                }
+            // [v1.2] 二次重排的候选切点：这一行所有安全的字缝，供 ×4 按需要的段数挑选。
+            // 它与 ×2 的切分门无关（引用行、缩进行在 ×4 里同样需要能继续对半），
+            // 但角色和拉丁保护照旧：不切 UI/图注，不切可能劈词的拉丁行。
+            val cuts = if (eligibleRole && (options.latinSplitEnabled || !latinLike(line))) {
+                safeGaps(profile(line), medH, exemptFor(line))
+            } else {
+                emptyList()
             }
-            updated[line] = line.copy(cutX = cutX, split = isSplit, centered = centered, cuts = extraCuts)
+            updated[line] = line.copy(cutX = cutX, split = isSplit, centered = centered, cuts = cuts)
         }
 
         val ratio = if (splitCount == 0) 0f else clean.toFloat() / splitCount
@@ -165,6 +160,41 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
             }
         }
         return SplitOutcome(newBlocks, cut, ratio, splitCount, weak)
+    }
+
+    /**
+     * 这一行所有能安全下刀的字缝（升序，列坐标）。
+     *
+     * 二次重排（×4）不是“按固定 3 刀切 4 段”，而是**按需要的段数挑最近的缝**：
+     * 每条行的字缝疏密不同，固定刀位会切出 197/18/56/158 这种碎片。
+     *
+     * 与 [ColumnInk.splitsWord] 同一套保护：可能劈开西文单词的缝不进入候选。
+     */
+    private fun safeGaps(p: ColumnInk, medianHeight: Float, gapExemptPx: Int): List<Int> {
+        if (p.width <= 0) return emptyList()
+        val thr = p.lowInkThreshold
+        val right = p.left + p.width
+        val out = ArrayList<Int>(8)
+        var x = 0
+        while (x < p.width) {
+            if (p.counts[x] > thr) {
+                x++
+                continue
+            }
+            val start = x
+            var zeroOnly = true
+            while (x < p.width && p.counts[x] <= thr) {
+                if (p.counts[x] > 0) zeroOnly = false
+                x++
+            }
+            // 单个零墨列多半是抗锯齿噪点；低墨列组（JPEG 截图里的字缝）1 列也认。
+            if (zeroOnly && x - start < 2) continue
+            val mid = p.left + (start + x - 1) / 2
+            if (mid - p.left < 2 || right - mid < 2) continue
+            if (p.splitsWord(mid, medianHeight, gapExemptPx)) continue
+            out.add(mid)
+        }
+        return out
     }
 
     /**
@@ -217,8 +247,7 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
         gapExemptPx: Int = 0,
     ): Pair<Int, Float>? {
         if (p.width <= 0) return null
-        val positive = p.counts.filter { it > 0 }.sorted()
-        val thr = if (positive.isEmpty()) 1f else max(1f, 0.10f * positive[positive.size / 2])
+        val thr = p.lowInkThreshold
 
         val zero = bestRun(p, center, win, medianHeight, 2, gapExemptPx) { it == 0 }
         if (zero != null) return zero to 0f

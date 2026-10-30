@@ -15,5 +15,11 @@ dist/*.apk
 testdata/out/
 testdata/out2/
 testdata/tmp/
+# 真实截图：版权/隐私原因只在本机保留，不随仓库分发
+testdata/private/
+testdata/samples/
+testdata/samples2/
+testdata/samples_mark/
+testdata/samples_ui/
 *.log
 *.idsig

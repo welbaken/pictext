@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -46,7 +45,6 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.pictext.BuildConfig
 import app.pictext.R
 import app.pictext.core.model.FallbackReason
 import app.pictext.core.model.PlanMode
@@ -165,7 +163,6 @@ private fun ReadyViewer(
         }
     }
 
-    var showAbout by remember { mutableStateOf(false) }
 
     var figure by remember { mutableStateOf<Pair<SourceImage, RectI>?>(null) }
     var progress by remember(current) { mutableFloatStateOf(currentPage.progress.coerceIn(0f, 1f)) }
@@ -222,6 +219,7 @@ private fun ReadyViewer(
                     viewModel.reportScroll(index, ratio)
                 },
                 onBarsVisible = { visible -> if (index == current) viewModel.setBarsVisible(visible) },
+                onZoom = viewModel::setZoomMultiplier,
                 onFigureClick = { figureItem ->
                     val s = viewModel.sessionAt(index)
                     if (s != null) figure = s.sourceImage to figureItem.src
@@ -237,19 +235,10 @@ private fun ReadyViewer(
             } else {
                 stringResource(R.string.app_name)
             },
-            visible = state.showBars || effectiveMode == ViewerMode.ORIGINAL,
-            modeLabel = stringResource(
-                if (effectiveMode == ViewerMode.REFLOW) R.string.mode_original else R.string.mode_reflow,
-            ),
+            // 原图模式也允许收起顶栏：图片已经让出了顶栏的高度（见 OriginalPage），
+            // 收起后是整屏，点一下正文再唤回来。
+            visible = state.showBars,
             onBack = onBack,
-            onToggleMode = {
-                viewModel.saveProgress(current, progress)
-                viewModel.setMode(
-                    if (effectiveMode == ViewerMode.REFLOW) ViewerMode.ORIGINAL else ViewerMode.REFLOW,
-                )
-            },
-            showModeButton = currentPage.plan?.mode != PlanMode.ORIGINAL && currentPage.plan != null,
-            onAbout = { showAbout = true },
             modifier = Modifier.align(Alignment.TopCenter),
         )
 
@@ -305,31 +294,6 @@ private fun ReadyViewer(
             modifier = Modifier.align(Alignment.BottomCenter),
         )
 
-        if (showAbout) {
-            AlertDialog(
-                onDismissRequest = { showAbout = false },
-                title = { Text(stringResource(R.string.about_title)) },
-                text = {
-                    Column {
-                        Text(
-                            text = stringResource(R.string.about_version, BuildConfig.VERSION_NAME),
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            text = stringResource(R.string.about_body),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showAbout = false }) {
-                        Text(stringResource(R.string.close))
-                    }
-                },
-            )
-        }
-
         val figureValue = figure
         if (figureValue != null) {
             FigureDialog(
@@ -350,6 +314,7 @@ private fun PageBody(
     mode: ViewerMode,
     onProgress: (Float) -> Unit,
     onBarsVisible: (Boolean) -> Unit,
+    onZoom: (Float) -> Unit,
     onFigureClick: (app.pictext.core.model.RenderItem.Figure) -> Unit,
     onEmptyTap: () -> Unit,
     onRetry: () -> Unit,
@@ -414,8 +379,10 @@ private fun PageBody(
         ReflowPage(
             session = session,
             page = page,
+            multiplier = page.multiplier,
             onProgress = onProgress,
             onBarsVisible = onBarsVisible,
+            onZoom = onZoom,
             onFigureClick = onFigureClick,
             onEmptyTap = onEmptyTap,
             modifier = Modifier.fillMaxSize(),

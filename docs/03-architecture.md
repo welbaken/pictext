@@ -1,5 +1,8 @@
 # 03 · 工程架构
 
+> 本文是 **v1 基线**。v2 新增的 `core/layout/`、ORT 适配器、HTML 夹具与
+> `PageLayout.regions` 见 [07 · V2 计划](07-v2-plan.md)；v1 的模块边界与渲染契约不变。
+
 ## 1. 模块划分
 
 ```
@@ -411,8 +414,30 @@ private fun TileImage(session: DocumentSession, index: Int, modifier: Modifier) 
 ```
 
 - `produceState` 在 item 滚出屏幕时自动取消，避免快速滑动时堆积任务；
+- **必须回收位图**：`DisposableEffect(bitmap)` 里把组合期取到的旧位图 `recycle()`（0.2.2 起）。
+  ×4 的瓦片 1080×1024 一张约 4MB，只靠 GC 的话快速滚动会把几十张丢给 finalizer，
+  低内存机器直接 OOM。注意写成 `val held = bitmap; onDispose { held.recycle() }`——
+  直接在 `onDispose` 里读 `bitmap` 会读到已经替换后的新值，把正在显示的那张回收掉；
 - 高度用 px → dp 精确换算，**不要** `wrapContent`，否则瓦片之间会出现 1px 缝；
 - 瓦片之间没有 `Arrangement.spacedBy`，间距都烘焙在计划里。
+
+### 6.4b 重排模式的双指缩放
+
+字号是计划的一部分，所以缩放也走“重新规划”而不是缩放画布：
+
+```kotlin
+// ReflowPage：Initial pass 只消费“两指以上”的事件，单指滚动/翻页不受影响
+awaitEachGesture {
+    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+    ... event.calculateZoom() → factor.coerceIn(minFactor, maxFactor) → preview = factor
+}
+```
+
+- 手势期间 `graphicsLayer(scaleX = preview)` 做临时放大（即时反馈，不重新排版）；
+- 松手后把目标倍率 `(当前倍率 × factor)` 夹到 `[1.0, 2.0]` 交给 ViewModel：
+  `level.baseMultiplier × zoom` 决定 `scaleMultiplier`，`replanAll()` 重新排版；
+- 倍率上限 2.0 = ×4：再往上一条满宽行要切 5 段以上，二次重排只能压小字号；
+- 到达两端时档位一起切过去（1.0 → ×2，2.0 → ×4），底栏高亮才跟得上。
 
 ### 6.5 原图模式
 
@@ -432,6 +457,14 @@ class ViewportImageLoader(private val source: SourceImage) {
 - 手势进行中：只对上一张位图做 `graphicsLayer` 变换，不重新解码；
 - 手势结束 120ms 后（`snapshotFlow().debounce`）：按当前视口解码一块新的位图，尺寸 ≤ 2048×2048；
 - 缩放上限 5×；低于 1× 回弹；
+- **拖动方向**：`offset` 是“视口左上角在缩放后图像上的位置”，画面画在 `-offset` 处，
+  所以 `detectTransformGestures` 的 `pan` 要**减**掉（`offset - pan`）。加 pan 会变成
+  手指往右、画面往左的镜像拖动；缩放部分仍按“两指中点为锚点”计算：
+  `offset' = (offset + centroid) × factor - centroid - pan`；
+- **上下留白**：与原图页一致，`padding(top = statusTop + 56.dp, bottom = navBottom + 56.dp)`，
+  顶栏出现时不会压住图片；顶栏/底栏都可以点正文收起（`Visible = state.showBars`）；
+- **位图回收**：新的视口帧到达时回收上一帧（同样把值取成局部变量再 `onDispose`），
+  反复缩放/拖动不会把整屏位图堆在 finalizer 里；解码失败只显示转圈，不让异常冒到 Compose；
 - 图块全屏复用同一个类，只是把 `source` 的可见范围限定为图块矩形。
 
 ### 6.6 渲染耗时

@@ -23,6 +23,9 @@ class DocumentSession(
 ) : Closeable {
     var planVersion: Int = 0
 
+    /** 生成当前 [plan] 时用的重排倍率（档位基准 × 双指缩放）；重排页用它算缩放的余量。 */
+    var multiplier: Float = 1f
+
     override fun close() {
         strips.clear()
         sourceImage.close()

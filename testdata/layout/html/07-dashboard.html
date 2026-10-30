@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>后台仪表盘 · 宽屏</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  body { background: #f4f6fa; max-width: none; }
+  .app { display: flex; min-height: 1080px; }
+  .sidebar {
+    width: 260px; flex: 0 0 auto; background: #111827; color: #cbd5e1;
+    padding: 24px 18px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .sidebar .brand { color: #fff; font-size: 22px; font-weight: 900; letter-spacing: .5px; margin: 4px 8px 22px; }
+  .sidebar .item { padding: 11px 14px; border-radius: 10px; font-size: 16px; color: #cbd5e1; }
+  .sidebar .item.active { background: #2563eb; color: #fff; font-weight: 700; }
+  .sidebar .group { margin: 18px 12px 6px; font-size: 12px; letter-spacing: 1.5px; color: #64748b; }
+  .main { flex: 1; min-width: 0; padding: 0 30px 36px; }
+  .topbar { display: flex; align-items: center; gap: 16px; height: 74px; border-bottom: 1px solid #e2e8f0; }
+  .topbar .title { font-size: 20px; font-weight: 800; }
+  .topbar .spacer { flex: 1; }
+  .topbar .search { width: 320px; height: 38px; border-radius: 9px; background: #fff; border: 1px solid #e2e8f0; }
+  .topbar .avatar { width: 36px; height: 36px; }
+  .page-head { display: flex; align-items: flex-end; gap: 14px; margin: 24px 0 18px; }
+  .page-head h1 { font-size: 30px; margin: 0; }
+  .page-head .meta { margin-left: auto; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .kpi { background: #fff; border: 1px solid #e6eaf2; border-radius: 14px; padding: 16px 18px; }
+  .kpi .label { font-size: 14px; color: #64748b; }
+  .kpi .value { font-size: 30px; font-weight: 900; line-height: 1.3; margin-top: 4px; }
+  .kpi .delta { font-size: 13px; color: #15803d; margin-top: 4px; }
+  .kpi .delta.down { color: #b91c1c; }
+  .mid { display: flex; gap: 18px; margin-top: 20px; align-items: flex-start; }
+  .panel { background: #fff; border: 1px solid #e6eaf2; border-radius: 14px; padding: 18px 20px; }
+  .chart-panel { flex: 1.7 1 0; min-width: 0; }
+  .feed-panel { flex: 1 1 0; min-width: 0; }
+  .panel h2 { font-size: 17px; margin: 0 0 4px; }
+  .panel .sub { font-size: 13px; color: #64748b; margin-bottom: 14px; }
+  .chart { width: 100%; height: 250px; display: block; }
+  .feed { list-style: none; margin: 0; padding: 0; }
+  .feed li { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid #eef2f7; font-size: 14px; line-height: 1.55; }
+  .feed li:last-child { border-bottom: 0; }
+  .feed .t { color: #94a3b8; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .bottom { margin-top: 20px; }
+  .bottom table { font-size: 14px; }
+  .bottom th, .bottom td { padding: 11px 12px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #e8f7ef; color: #157347; }
+  .badge.warn { background: #fff3e0; color: #a45b00; }
+  .badge.err { background: #fdecec; color: #b91c1c; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <aside class="sidebar" data-region="sidebar" data-kind="chrome" data-order="1">
+    <div class="brand">PicText Ops</div>
+    <div class="item active">总览</div>
+    <div class="item">任务队列</div>
+    <div class="item">模型版本</div>
+    <div class="item">样例库</div>
+    <div class="group">分析</div>
+    <div class="item">耗时分布</div>
+    <div class="item">回退原因</div>
+    <div class="item">覆盖率</div>
+    <div class="group">系统</div>
+    <div class="item">设备矩阵</div>
+    <div class="item">日志</div>
+    <div style="flex:1"></div>
+    <div class="item">v2.0.0-rc1</div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar" data-region="topbar" data-kind="chrome" data-order="2">
+      <div class="title">版面分析 · 总览</div>
+      <div class="spacer"></div>
+      <div class="search"></div>
+      <div class="avatar avatar--blue"></div>
+    </div>
+
+    <div class="page-head">
+      <h1 data-region="page-title" data-kind="title" data-order="3">今日分析任务</h1>
+      <div class="meta" data-region="page-meta" data-kind="text" data-order="4">最近 24 小时 · 自动刷新已关闭</div>
+    </div>
+
+    <section class="kpis">
+      <div class="kpi" data-region="kpi-1" data-kind="ui" data-order="5">
+        <div class="label">分析页数</div><div class="value">12,480</div><div class="delta">+8.2% 环比</div>
+      </div>
+      <div class="kpi" data-region="kpi-2" data-kind="ui" data-order="6">
+        <div class="label">中位耗时</div><div class="value">312 ms</div><div class="delta">-24 ms</div>
+      </div>
+      <div class="kpi" data-region="kpi-3" data-kind="ui" data-order="7">
+        <div class="label">区域覆盖率</div><div class="value">99.7%</div><div class="delta">+0.4%</div>
+      </div>
+      <div class="kpi" data-region="kpi-4" data-kind="ui" data-order="8">
+        <div class="label">回退 v1</div><div class="value">3.1%</div><div class="delta down">+0.6%</div>
+      </div>
+    </section>
+
+    <section class="mid">
+      <div class="panel chart-panel" data-region="chart" data-kind="figure" data-order="9">
+        <h2>分析耗时 · P50 / P95</h2>
+        <div class="sub">单位 ms，按小时聚合</div>
+        <svg class="chart" viewBox="0 0 760 250" preserveAspectRatio="none" role="img" aria-label="耗时折线图">
+          <g stroke="#eef2f7" stroke-width="1">
+            <line x1="0" y1="50" x2="760" y2="50"/><line x1="0" y1="100" x2="760" y2="100"/>
+            <line x1="0" y1="150" x2="760" y2="150"/><line x1="0" y1="200" x2="760" y2="200"/>
+          </g>
+          <polyline fill="none" stroke="#2563eb" stroke-width="3"
+            points="0,170 76,160 152,150 228,158 304,132 380,120 456,126 532,104 608,110 684,92 760,96"/>
+          <polyline fill="none" stroke="#f59e0b" stroke-width="2" stroke-dasharray="6 5"
+            points="0,120 76,112 152,104 228,118 304,96 380,84 456,92 532,72 608,80 684,64 760,70"/>
+        </svg>
+      </div>
+
+      <div class="panel feed-panel">
+        <h2 data-region="feed-title" data-kind="title" data-order="10">最近回退</h2>
+        <div class="sub" data-region="feed-sub" data-kind="text" data-order="11">按原因聚合，点击查看样例</div>
+        <ul class="feed" data-region="feed-list" data-kind="text" data-order="12">
+          <li><span class="t">14:32</span><span>低覆盖 0.982 · 长图 1080×20000</span></li>
+          <li><span class="t">14:18</span><span>竖排占比 41% · 书法样例</span></li>
+          <li><span class="t">14:02</span><span>区域数 1 · 纯海报</span></li>
+          <li><span class="t">13:47</span><span>切点不干净 · 拉丁代码页</span></li>
+          <li><span class="t">13:20</span><span>多栏未分开 · PDF 双栏</span></li>
+          <li><span class="t">12:58</span><span>tile 数 68 · 超长图</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="panel bottom">
+      <h2 data-region="table-title" data-kind="title" data-order="13">设备矩阵</h2>
+      <div class="table-wrap" style="margin-top:12px">
+        <table data-region="device-table" data-kind="table" data-order="14">
+          <thead><tr><th>设备</th><th>SoC</th><th>分析 P50</th><th>首屏 P50</th><th>状态</th></tr></thead>
+          <tbody>
+            <tr><td>Pixel 8</td><td>Tensor G3</td><td>248 ms</td><td>690 ms</td><td><span class="badge">达标</span></td></tr>
+            <tr><td>Xiaomi 14</td><td>骁龙 8 Gen 3</td><td>196 ms</td><td>612 ms</td><td><span class="badge">达标</span></td></tr>
+            <tr><td>Redmi Note 12</td><td>骁龙 685</td><td>486 ms</td><td>1,120 ms</td><td><span class="badge warn">偏高</span></td></tr>
+            <tr><td>Galaxy A24</td><td>Exynos 1280</td><td>542 ms</td><td>1,260 ms</td><td><span class="badge err">超预算</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

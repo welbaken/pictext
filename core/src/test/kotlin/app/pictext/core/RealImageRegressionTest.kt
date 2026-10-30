@@ -23,7 +23,7 @@ import javax.imageio.ImageIO
 import kotlin.math.roundToInt
 
 /**
- * P0-0 真实图片回归：直接读 `testdata/samples/`（不复制图片），
+ * P0-0 真实图片回归：直接读 `testdata/private/samples/`（或 `testdata/samples/`），不复制图片，
  * 断言结构值处在“已知良好”的区间，并在控制台打印一行可贴进报告的摘要。
  *
  * 阈值刻意留了余量（行数 ±3、scale ±0.15）：这里抓的是**结构性回归**
@@ -40,25 +40,29 @@ class RealImageRegressionTest {
         val auditSummary: String,
     )
 
-    private fun sampleDir(): File? {
+    /**
+     * 真实截图不随仓库分发：优先读 `testdata/private/<name>`，没有就退回 `testdata/<name>`。
+     * 两者都不存在时测试用 [assumeTrue] 跳过，CI 不会因为缺私有样例而红。
+     */
+    private fun sampleDirOf(name: String): File? {
         val root = System.getProperty("pictext.root") ?: return null
-        val dir = File(root, "testdata/samples")
-        return if (dir.isDirectory) dir else null
+        val privateDir = File(root, "testdata/private/$name")
+        if (privateDir.isDirectory) return privateDir
+        val publicDir = File(root, "testdata/$name")
+        return if (publicDir.isDirectory) publicDir else null
     }
+
+    private fun sampleDir(): File? = sampleDirOf("samples")
 
     private fun run(name: String): Run {
         val dir = sampleDir()
-        assumeTrue("testdata/samples 不存在（设置 -Dpictext.root=仓库根目录）", dir != null)
+        assumeTrue("真实样例不存在（放到 testdata/private/samples/ 或设置 -Dpictext.root=仓库根目录）", dir != null)
         val file = File(dir, "$name.jpg")
         assumeTrue("缺少样例 $file", file.isFile)
         return runFile(name, file)
     }
 
-    private fun sample2Dir(): File? {
-        val root = System.getProperty("pictext.root") ?: return null
-        val dir = File(root, "testdata/samples2")
-        return if (dir.isDirectory) dir else null
-    }
+    private fun sample2Dir(): File? = sampleDirOf("samples2")
 
     private fun runFile(
         name: String,
@@ -115,14 +119,14 @@ class RealImageRegressionTest {
     }
 
     /**
-     * P1-2 批量巡检：`testdata/samples2/` 里每一张都必须满足与主样例相同的硬约束
+     * P1-2 批量巡检：`testdata/private/samples2/`（或 `testdata/samples2/`）里每一张都必须满足与主样例相同的硬约束
      * （不崩、src/dest 不越界、非回退模式审计通过）。不锁具体结构值——这批样例
      * 覆盖贴吧/知乎/微博/X/新闻/韩语/希伯来语等来源，本来就不该有同一个“正确值”。
      */
     @Test
     fun `every sample2 image runs without violating invariants`() {
         val dir = sample2Dir()
-        assumeTrue("testdata/samples2 不存在", dir != null)
+        assumeTrue("samples2 不存在（testdata/private/samples2 或 testdata/samples2）", dir != null)
         val files = dir!!.listFiles { f ->
             f.isFile && f.extension.lowercase() in setOf("jpg", "jpeg", "png", "webp")
         }?.sortedBy { it.name } ?: emptyList()
@@ -142,21 +146,19 @@ class RealImageRegressionTest {
     @Test
     fun `x4 mode produces four segments and a larger scale`() {
         val dir = sampleDir()
-        assumeTrue("testdata/samples 不存在", dir != null)
+        assumeTrue("samples 不存在（testdata/private/samples 或 testdata/samples）", dir != null)
         val file = File(dir!!, "twitter.jpg")
         assumeTrue("缺少样例 $file", file.isFile)
         val base = runFile("twitter-x2", file)
         val quad = runFile(
             "twitter-x4",
             file,
-            AnalysisOptions(splitSegments = 4),
-            ReflowOptions(
+            options = ReflowOptions(
                 outputWidth = 1080,
                 targetEm = 44,
                 forceReflow = true,
                 scaleMultiplier = 2f,
                 maxSegments = 4,
-                maxScale = 6f,
             ),
         )
         assertTrue("×4 应当重排，实际 ${quad.plan.mode}/${quad.plan.fallback}", quad.plan.mode == PlanMode.REFLOW)

@@ -36,7 +36,8 @@ import kotlin.math.roundToInt
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
         System.err.println(
-            "usage: pictext-cli <input-image> [out-dir] [--out-width N] [--target-em N] [--latin-split]",
+            "usage: pictext-cli <input-image> [out-dir] [--out-width N] [--target-em N] " +
+                "[--latin-split] [--x4] [--dump-lines]",
         )
         System.err.println("       pictext-cli summary <out.png> <a.png> <b.png> ...")
         return
@@ -54,12 +55,16 @@ fun main(args: Array<String>) {
     var outWidth = 1080
     var targetEm = 44
     var latinSplit = false
+    var x4 = false
+    var dumpLines = false
     var i = 1
     while (i < args.size) {
         when (args[i]) {
             "--out-width" -> outWidth = args.getOrNull(++i)?.toIntOrNull() ?: outWidth
             "--target-em" -> targetEm = args.getOrNull(++i)?.toIntOrNull() ?: targetEm
             "--latin-split" -> latinSplit = true
+            "--x4" -> x4 = true
+            "--dump-lines" -> dumpLines = true
             else -> if (!args[i].startsWith("--")) outDir = File(args[i])
         }
         i++
@@ -103,10 +108,28 @@ fun main(args: Array<String>) {
     val t0 = System.nanoTime()
     val layout = LayoutAnalyzer(analysisOptions).analyze(gray, w, h)
     val t1 = System.nanoTime()
-    val planOptions = ReflowOptions(outputWidth = outWidth, targetEm = targetEm)
+    val planOptions = if (x4) {
+        ReflowOptions(
+            outputWidth = outWidth,
+            targetEm = targetEm,
+            forceReflow = true,
+            scaleMultiplier = 2f,
+            maxSegments = 4,
+        )
+    } else {
+        ReflowOptions(outputWidth = outWidth, targetEm = targetEm)
+    }
     val plan = ReflowPlanner().plan(layout, planOptions)
     val t2 = System.nanoTime()
     val audit = PlanAuditor.audit(layout, plan)
+    if (dumpLines) {
+        for ((index, line) in layout.textLines().withIndex()) {
+            println(
+                "line[$index] role=${line.role} band=${line.band} cutX=${line.cutX} " +
+                    "split=${line.split} centered=${line.centered} cuts=${line.cuts}",
+            )
+        }
+    }
 
     if (plan.mode == PlanMode.ORIGINAL) {
         ImageIO.write(rgb, "png", File(outDir, "after.png"))

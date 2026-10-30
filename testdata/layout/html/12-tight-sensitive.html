@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>紧排粗体与敏感文本</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  body { background: #ffffff; }
+  .page { max-width: 1080px; padding: 34px 44px 56px; }
+  h1 { font-size: 34px; line-height: 1.35; margin: 0 0 10px; }
+  .lead { font-size: 18px; color: #6b6b76; margin: 0 0 24px; }
+  .card { border: 1px solid var(--line); border-radius: 14px; padding: 24px 26px; margin-bottom: 22px; }
+  .card h2 { font-size: 22px; margin: 0 0 12px; }
+  /* 故意把字距压到负值，再用描边加粗，目标是让字与字之间没有零墨列。 */
+  .tight {
+    font-weight: 900;
+    letter-spacing: -1.6px;
+    -webkit-text-stroke: 1.4px currentColor;
+    line-height: 1.75;
+    font-size: 23px;
+    margin: 0 0 12px;
+    color: #111;
+  }
+  .normal { font-size: 22px; line-height: 1.8; margin: 0 0 12px; }
+  .price { font: 900 40px/1.3 "Segoe UI", var(--font); letter-spacing: .5px; color: #c62828; margin: 4px 0 14px; }
+  .url { font: 18px/1.6 var(--mono); color: #2456c4; word-break: break-all; margin: 0 0 12px; }
+  pre { background: #0b0e14; color: #c7d2e3; border-radius: 10px; padding: 14px 16px;
+        font: 15px/1.75 var(--mono); margin: 0 0 12px; white-space: pre-wrap; }
+  .phone { font: 700 22px/1.6 "Segoe UI", var(--font); letter-spacing: 1px; margin: 0; }
+  .hint { font-size: 15px; color: #8a8f9c; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1 data-region="title" data-kind="title" data-order="1">紧排粗体与敏感文本</h1>
+  <p class="lead" data-region="lead" data-kind="text" data-order="2">
+    这页用来验证两件事：字间缝很窄的中文行能不能只坏一个字；价格、URL、代码能不能一次都不被切断。
+  </p>
+
+  <section class="card">
+    <h2 data-region="tight-title" data-kind="title" data-order="3">一、字间缝很窄的紧排正文</h2>
+    <p class="tight" data-region="tight-p1" data-kind="text" data-order="4">
+      这段文字的字距被压到负值，字与字之间的空白很窄，投影能找到的干净字缝明显变少；
+      如果仍然坚持不切，整页倍率就会被这一行拖到一倍以下，所有正文都变小。
+    </p>
+    <p class="tight" data-region="tight-p2" data-kind="text" data-order="5">
+      更合理的做法是允许一次强制切分：在目标位置附近挑墨量最小的列，宁可让一个字缺半边，
+      也要保住其余二十几个字的字号。切完的两段仍然按原顺序上下排列。
+    </p>
+    <p class="hint" data-region="tight-hint" data-kind="text" data-order="6">
+      期望：软缝或 1 次强制切；全页 s 不变；其余行不受影响。
+    </p>
+  </section>
+
+  <section class="card">
+    <h2 data-region="sensitive-title" data-kind="title" data-order="7">二、敏感文本：一次都不许切</h2>
+    <div class="price" data-region="price" data-kind="text" data-order="8" data-sensitive="1">¥1,299.00</div>
+    <p class="url" data-region="url" data-kind="text" data-order="9" data-sensitive="1">
+      https://example.com/reader/layout?lang=zh-CN&amp;mode=reflow
+    </p>
+    <pre data-region="code" data-kind="text" data-order="10" data-sensitive="1">val layout = analyzer.analyze(gray, srcWidth, srcHeight)
+val plan = planner.plan(layout, options.copy(maxSegmentsPerLine = 6))</pre>
+    <p class="phone" data-region="phone" data-kind="text" data-order="11" data-sensitive="1">400-820-8820</p>
+    <p class="hint" data-region="sensitive-hint" data-kind="text" data-order="12">
+      期望：0 次强制切；放不下时压缩本行；敏感压缩行占比 ≤5%，否则整页回退 v1。
+    </p>
+  </section>
+
+  <section class="card">
+    <h2 data-region="normal-title" data-kind="title" data-order="13">三、普通正文作为对照</h2>
+    <p class="normal" data-region="normal-p" data-kind="text" data-order="14">
+      同一页里的普通正文应当保持与紧排段落相同的倍率。强制切分只改变断开的位置，
+      不改变字号；读者看到的是“某一行有一个字被拆开”，而不是“整页字都变小了”。
+    </p>
+  </section>
+
+  <footer class="footer" data-region="footer" data-kind="chrome" data-order="15">
+    <span>夹具 12 · 强制切与敏感文本</span><span style="flex:1"></span><span>1 / 1</span>
+  </footer>
+</div>
+</body>
+</html>

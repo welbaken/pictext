@@ -21,6 +21,8 @@ data class PageState(
     val failure: FailureKind? = null,
     val progress: Float = 0f,
     val version: Int = 0,
+    /** 生成 [plan] 时用的重排倍率（1.0 = ×2 档，2.0 = ×4 档；双指缩放可在两者之间）。 */
+    val multiplier: Float = 1f,
 ) {
     val tileCount: Int get() = plan?.tileCount ?: 0
 }

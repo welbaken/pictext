@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>超长信息流 · 长图分块</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  body { background: #edf0f5; }
+  .page { max-width: 1080px; padding: 18px 36px 50px; }
+  .feed-head {
+    display: flex; align-items: center; gap: 12px; padding: 10px 4px 16px;
+    border-bottom: 1px solid #dfe4ec; margin-bottom: 18px;
+  }
+  .feed-head .brand { font-size: 24px; font-weight: 900; }
+  .feed-head .spacer { flex: 1; }
+  .card { background: #fff; border-radius: 18px; padding: 22px 24px; margin-bottom: 18px; }
+  .head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .head .name { font-size: 18px; font-weight: 800; line-height: 1.3; }
+  .head .meta { font-size: 14px; }
+  .head .more { margin-left: auto; color: #9aa0ad; font-size: 20px; }
+  .card p { font-size: 21px; line-height: 1.75; margin: 0 0 12px; }
+  .card .media { height: 300px; border-radius: 12px; margin: 6px 0 12px; }
+  .actions { display: flex; gap: 30px; color: #5f6573; font-size: 16px;
+             border-top: 1px solid #eceef3; padding-top: 12px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #cfd4de; display: inline-block; margin-right: 6px; }
+  .end { text-align: center; color: #8b93a3; font-size: 15px; padding: 24px 0; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="feed-head" data-region="feed-head" data-kind="chrome" data-order="1">
+    <div class="brand">长图信息流</div>
+    <span class="chip">关注</span><span class="chip chip--warn">推荐</span>
+    <div class="spacer"></div><span class="meta">14 条 · 下拉刷新</span>
+  </header>
+
+  <main id="feed"></main>
+
+  <template id="card-template">
+    <article class="card">
+      <header class="head" data-region="c{n}-head" data-kind="ui" data-order="0">
+        <div class="avatar avatar--sm avatar--blue"></div>
+        <div><div class="name">读者 {n}</div><div class="meta">@reader_{n} · {n} 小时前</div></div>
+        <div class="more">···</div>
+      </header>
+      <p data-region="c{n}-body" data-kind="text" data-order="0"></p>
+      <figure data-region="c{n}-fig" data-kind="figure" data-order="0">
+        <div class="media ph ph--sun" data-label="P {n}" role="img" aria-label="配图"></div>
+      </figure>
+      <div class="actions" data-region="c{n}-actions" data-kind="ui" data-order="0">
+        <span><i class="dot"></i>评论 {n}8</span>
+        <span><i class="dot"></i>转发 {n}6</span>
+        <span><i class="dot"></i>点赞 {n}20</span>
+      </div>
+    </article>
+  </template>
+
+  <div class="end" data-region="feed-end" data-kind="chrome" data-order="999">— 已经到底了 —</div>
+</div>
+
+<script>
+  const texts = [
+    "今天把 1080×20000 的长图切成 20 个 tile，模型终于能看清每一段的首行缩进了。",
+    "覆盖审计救了一次：模型漏掉图片下方那行浅灰图注，残差补区把它找了回来。",
+    "双栏新闻的顺序第一次是对的：左栏读到底，再读右栏，而不是左右交错。",
+    "半宽文字区按需切两段之后，正文倍率不用再被最宽的不切行拖下来，整页字号统一了。",
+    "表格还是整块放大最稳。切开之后行列关系全乱，读者根本对不上表头。",
+    "深色模式下 ROI 细化要沿用全页的背景估计，不然同一页会出现两种“墨迹”。"
+  ];
+  const feed = document.getElementById("feed");
+  const tpl = document.getElementById("card-template");
+  let order = 2;
+  for (let i = 1; i <= 14; i++) {
+    const node = tpl.content.firstElementChild.cloneNode(true);
+    node.querySelectorAll("[data-region]").forEach((el) => {
+      el.dataset.region = el.dataset.region.replace("{n}", String(i));
+      el.dataset.order = String(order++);
+    });
+    // 模板里的 {n} 不只是区域 id，昵称、时间、计数、图片角标里也有。
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+    let textNode;
+    while ((textNode = walker.nextNode())) {
+      textNode.nodeValue = textNode.nodeValue.replaceAll("{n}", String(i));
+    }
+    node.querySelectorAll("[data-label]").forEach((el) => {
+      el.dataset.label = el.dataset.label.replaceAll("{n}", String(i));
+    });
+    node.querySelector('[data-region="c' + i + '-body"]').textContent = texts[(i - 1) % texts.length];
+    feed.appendChild(node);
+  }
+  document.documentElement.dataset.generated = "1";
+</script>
+</body>
+</html>

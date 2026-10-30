@@ -1,0 +1,98 @@
+[
+  {
+    "id": "01-article-light",
+    "html": "html/01-article-light.html",
+    "widths": [1080],
+    "tags": ["light", "card", "figure-right", "caption", "quote", "mixed"],
+    "orderStrict": true,
+    "note": "浅色卡片文章：左文右图 + 图注 + 引用 + 双图。对应截图 A/C 与 B 的关系。"
+  },
+  {
+    "id": "02-article-paper",
+    "html": "html/02-article-paper.html",
+    "widths": [1080],
+    "tags": ["background", "paper", "float", "caption", "serif", "mixed"],
+    "orderStrict": true,
+    "note": "纸张纹理背景 + 图片右浮动 + 正文环绕；测试同一横带内文字与图片的分离。"
+  },
+  {
+    "id": "03-news-columns",
+    "html": "html/03-news-columns.html",
+    "widths": [1080],
+    "tags": ["plain", "news", "two-column", "table", "caption", "wide-figure"],
+    "orderStrict": true,
+    "note": "白底无卡片：通栏标题 + 大图 + 双栏正文 + 右栏相关阅读/表格。双栏顺序必须左栏读完再右栏。"
+  },
+  {
+    "id": "04-social-feed",
+    "html": "html/04-social-feed.html",
+    "widths": [1080],
+    "tags": ["background", "social", "card", "avatar", "ui-row", "grid"],
+    "orderStrict": true,
+    "note": "社交信息流：头像/昵称/正文/图片/操作栏；操作栏是 UI，不参与切分。"
+  },
+  {
+    "id": "05-chat",
+    "html": "html/05-chat.html",
+    "widths": [1080],
+    "tags": ["background", "chat", "bubble", "left-right", "ui-chrome"],
+    "orderStrict": true,
+    "note": "聊天记录：左右气泡、时间戳、图片消息、语音、输入栏；测试左右交替但纵向阅读的顺序。"
+  },
+  {
+    "id": "06-product",
+    "html": "html/06-product.html",
+    "widths": [1080],
+    "tags": ["plain", "product", "gallery-left", "table", "reviews"],
+    "orderStrict": true,
+    "note": "电商详情：左图右文 + 规格表 + 详情图 + 评价；表格整块保留。"
+  },
+  {
+    "id": "07-dashboard",
+    "html": "html/07-dashboard.html",
+    "widths": [1920],
+    "tags": ["wide", "desktop", "sidebar", "kpi", "chart", "table", "chrome"],
+    "orderStrict": false,
+    "note": "1920 宽后台：侧栏 + 顶栏 + KPI + 图表 + 表格；宽图必须横向切 tile。顺序有歧义（侧栏/顶栏），只做弱断言。"
+  },
+  {
+    "id": "08-dark-article",
+    "html": "html/08-dark-article.html",
+    "widths": [1080],
+    "tags": ["dark", "background", "code", "caption", "mixed"],
+    "orderStrict": true,
+    "note": "深色模式文章：深底浅字 + 代码块；测试暗色背景估计与拉丁行不硬切。"
+  },
+  {
+    "id": "09-poster",
+    "html": "html/09-poster.html",
+    "widths": [1080],
+    "tags": ["poster", "background", "text-over-image", "hard-negative"],
+    "orderStrict": false,
+    "note": "海报：大字叠在渐变/纹理上；允许整页回退原图，要求内容完整、不切碎。"
+  },
+  {
+    "id": "10-long-feed",
+    "html": "html/10-long-feed.html",
+    "widths": [1080],
+    "tags": ["long", "tiling", "feed", "card", "repeated"],
+    "orderStrict": true,
+    "note": "14 条重复信息流（约 8k–9k 高），用于 tile 网格、跨 tile 去重、长图内存。"
+  },
+  {
+    "id": "11-doc-two-column",
+    "html": "html/11-doc-two-column.html",
+    "widths": [1080],
+    "tags": ["plain", "document", "two-column", "equation", "table", "serif"],
+    "orderStrict": true,
+    "note": "论文双栏：通栏标题/摘要 + 左右栏 + 公式 + 表格 + 脚注；模型训练分布内，应作为高基线。"
+  },
+  {
+    "id": "12-tight-sensitive",
+    "html": "html/12-tight-sensitive.html",
+    "widths": [1080],
+    "tags": ["plain", "tight", "forced-cut", "sensitive", "url", "code", "price"],
+    "orderStrict": true,
+    "note": "紧排粗体中文，硬缝很少；价格/URL/代码/电话是敏感行，禁止强制切。强制切本身另用合成 TextLine 单测。"
+  }
+]

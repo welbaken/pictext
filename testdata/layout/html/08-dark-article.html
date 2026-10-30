@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>深色模式 · 图文文章</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  body { background: #0f1117; color: #e6e8ef; }
+  .page { max-width: 1080px; padding: 30px 42px 60px; }
+  .topbar { border-bottom-color: #262b36; }
+  .topbar .brand { color: #f2f4fa; }
+  .topbar .meta { color: #99a2b3; }
+  .card { background: #171a22; border-color: #262b36; }
+  .card--tint { background: #141c2b; border-color: #23324a; }
+  h1, h2, h3 { color: #f4f6fb; }
+  .body, .title-md, .title-xl { color: #e6e8ef; }
+  .muted, .meta, .caption { color: #99a2b3; }
+  .quote { background: #141c2b; border-left-color: #6ea8ff; color: #cfd7e6; }
+  .rule { background: #262b36; }
+  .chip { background: #1b2a44; color: #8fbcff; }
+  pre {
+    background: #0b0e14; border: 1px solid #262b36; border-radius: 10px;
+    padding: 14px 16px; overflow: hidden; font: 15px/1.7 var(--mono); color: #b7c4d8;
+    white-space: pre-wrap; margin: 16px 0;
+  }
+  .footer { border-top-color: #262b36; color: #7f8899; }
+  .ph { border: 1px solid #2a3040; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="topbar" data-region="chrome-top" data-kind="chrome" data-order="1">
+    <div class="avatar avatar--ink"></div>
+    <div>
+      <div class="brand">夜读</div>
+      <div class="meta">深色模式 · 第 8 期 · 4 分钟</div>
+    </div>
+    <div class="spacer"></div><span class="chip">夜间</span>
+  </header>
+
+  <h1 class="title-xl" data-region="title" data-kind="title" data-order="2">
+    深色底上的字，为什么更容易糊成一团
+  </h1>
+  <p class="body" data-region="p1" data-kind="text" data-order="3">
+    浅色底上的黑字，笔画边缘的反锯齿是“由黑到白”的过渡；深色底上的浅字，过渡方向反过来，
+    细笔画在低亮度屏幕上更容易被背景吃掉。二值化的阈值稍有偏差，一整行字就会消失。
+  </p>
+  <p class="body" data-region="p2" data-kind="text" data-order="4">
+    所以背景估计不能假设“纸是白的”。先看边界像素的中位亮度，判断整页是亮底还是暗底，
+    再决定墨迹是“比背景暗”还是“比背景亮”。
+  </p>
+
+  <figure data-region="fig1" data-kind="figure" data-order="5">
+    <div class="ph ph--slate" style="height:300px" data-label="DARK 01" role="img" aria-label="深色模式阅读页"></div>
+    <figcaption data-region="cap1" data-kind="caption" data-order="6">
+      图 1：深色模式下的正文与图注；图注不应被当成正文放大。
+    </figcaption>
+  </figure>
+
+  <div class="card card--tint">
+    <h2 class="title-md" data-region="sec-title" data-kind="title" data-order="7">一个容易踩的坑</h2>
+    <p class="body" data-region="p3" data-kind="text" data-order="8">
+      如果按“全图 90 分位”估计背景，深色卡片会被当成背景吃掉，只剩边缘的一圈噪声；
+      正确做法是只用接近纸色的像素估计背景，其余格子留空，再用种子色填。
+    </p>
+    <div class="quote" data-region="quote" data-kind="text" data-order="9">
+      深色图块内部没有候选像素 → 该格子为 NaN → 用种子色填 → 内部墨量很大 → 正确判成图块。
+    </div>
+    <p class="body" data-region="p4" data-kind="text" data-order="10">
+      这条规则在 v1 的黄金样例里已经固定下来；v2 的区域细化必须复用同一套背景估计，
+      不能因为 ROI 变小就换成“简单阈值”。
+    </p>
+    <pre data-region="code" data-kind="text" data-order="11">val (bg, dark) = estimateBackground(gray)
+val ink = if (dark) clamp(gray - bg) else clamp(bg - gray)
+val mask = binarize(ink, clamp(otsu(ink), 12, 80))</pre>
+  </div>
+
+  <p class="body" data-region="p5" data-kind="text" data-order="12">
+    下一节会把这套规则搬到区域级：每个文本区单独估计背景，但参数与全页保持一致，
+    避免同一页出现两种“墨迹”。
+  </p>
+
+  <footer class="footer" data-region="chrome-bottom" data-kind="chrome" data-order="13">
+    <span>夜读</span><span>·</span><span>本地分析</span><span style="flex:1"></span><span>8 / 12</span>
+  </footer>
+</div>
+</body>
+</html>

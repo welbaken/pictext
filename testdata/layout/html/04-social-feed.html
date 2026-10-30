@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>社交信息流 · 卡片</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  body { background: #e9edf3; }
+  .page { max-width: 1080px; padding: 26px 36px 60px; }
+  .feed-card { background: #fff; border-radius: 20px; padding: 26px 28px; margin-bottom: 24px; }
+  .head { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+  .head .name { font-size: 20px; font-weight: 800; line-height: 1.3; }
+  .head .handle { font-size: 16px; color: var(--muted); line-height: 1.4; }
+  .head .more { margin-left: auto; color: #9aa0ad; font-size: 22px; letter-spacing: 2px; }
+  .post-body { font-size: 22px; line-height: 1.8; margin: 0 0 16px; }
+  .post-body .mention { color: #2f6df6; }
+  .media { height: 430px; border-radius: 14px; margin: 4px 0 16px; }
+  .media-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 16px; }
+  .media-grid .ph { height: 220px; border-radius: 10px; }
+  .actions { display: flex; gap: 34px; color: #5f6573; font-size: 17px; border-top: 1px solid #eceef3; padding-top: 14px; }
+  .actions span { display: inline-flex; align-items: center; gap: 8px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: #cfd4de; display: inline-block; }
+  .quote-card { border: 1px solid #e1e5ee; border-radius: 14px; padding: 18px 20px; background: #fafbfe; margin: 4px 0 16px; }
+  .quote-card .qhead { font-size: 16px; color: var(--muted); margin-bottom: 8px; }
+  .quote-card p { font-size: 20px; line-height: 1.75; margin: 0; }
+  .translation { font-size: 17px; color: #5f6573; border-left: 3px solid #dfe4ef; padding-left: 12px; margin: -4px 0 16px; }
+  .divider { height: 10px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <article class="feed-card">
+    <header class="head" data-region="c1-head" data-kind="ui" data-order="1">
+      <div class="avatar avatar--blue"></div>
+      <div>
+        <div class="name">林一 <span class="chip">已关注</span></div>
+        <div class="handle">@linyi_reads · 2 小时前 · 来自 iPhone</div>
+      </div>
+      <div class="more">···</div>
+    </header>
+
+    <p class="post-body" data-region="c1-body" data-kind="text" data-order="2">
+      把一张 1080×20000 的长图切成 20 个 480 的 tile 之后，模型看到的终于不是一条 86px 宽的细线了。
+      版面识别的第一步不是模型，是分辨率。<span class="mention">#端侧阅读</span>
+    </p>
+
+    <figure data-region="c1-fig" data-kind="figure" data-order="3">
+      <div class="media ph ph--sun" data-label="PHOTO 01" role="img" aria-label="长图切片示意"></div>
+      <figcaption data-region="c1-cap" data-kind="caption" data-order="4">
+        图：tile 网格与重叠区域示意。长图按页宽定标，最后一列/行贴边，不补边。
+      </figcaption>
+    </figure>
+
+    <div class="actions" data-region="c1-actions" data-kind="ui" data-order="5">
+      <span><i class="dot"></i>评论 128</span>
+      <span><i class="dot"></i>转发 46</span>
+      <span><i class="dot"></i>点赞 1.2k</span>
+      <span><i class="dot"></i>收藏 309</span>
+    </div>
+  </article>
+
+  <article class="feed-card">
+    <header class="head" data-region="c2-head" data-kind="ui" data-order="6">
+      <div class="avatar avatar--green"></div>
+      <div>
+        <div class="name">周其</div>
+        <div class="handle">@zhouqi · 5 小时前</div>
+      </div>
+      <div class="more">···</div>
+    </header>
+
+    <div class="quote-card" data-region="c2-quote" data-kind="text" data-order="7">
+      <div class="qhead">引用 @版面实验室：</div>
+      <p>模型负责“哪些块、大概在哪、谁先谁后”；投影负责“这一行在哪、从哪切”。两件事分开，失败才能回退。</p>
+    </div>
+
+    <p class="post-body" data-region="c2-body" data-kind="text" data-order="8">
+      补充一个反例：如果模型把整张卡片判成一个 figure，文字就不会被放大。所以 figure 区域还要再跑一次行投影，
+      能切出三条以上稳定文字行的，改判 text。
+    </p>
+    <p class="translation" data-region="c2-translation" data-kind="text" data-order="9">
+      翻译：A figure region that contains stable text lines should be reclassified as text.
+    </p>
+
+    <figure data-region="c2-grid" data-kind="figure" data-order="10">
+      <div class="media-grid">
+        <div class="ph ph--coral" data-label="01" role="img" aria-label="切分前"></div>
+        <div class="ph ph--mint" data-label="02" role="img" aria-label="切分后"></div>
+        <div class="ph ph--violet" data-label="03" role="img" aria-label="行带"></div>
+        <div class="ph ph--amber" data-label="04" role="img" aria-label="区域框"></div>
+      </div>
+      <figcaption data-region="c2-cap" data-kind="caption" data-order="11">
+        四张调试图：切分前、切分后、行带、区域框。
+      </figcaption>
+    </figure>
+
+    <div class="actions" data-region="c2-actions" data-kind="ui" data-order="12">
+      <span><i class="dot"></i>评论 52</span>
+      <span><i class="dot"></i>转发 18</span>
+      <span><i class="dot"></i>点赞 640</span>
+    </div>
+  </article>
+
+  <div class="divider"></div>
+  <div class="meta" data-region="feed-end" data-kind="chrome" data-order="13" style="text-align:center">
+    已经看到这里了 · 下拉刷新
+  </div>
+</div>
+</body>
+</html>

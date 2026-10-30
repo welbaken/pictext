@@ -1,0 +1,258 @@
+{
+  "schema": 1,
+  "generatedAt": "2026-10-29T20:26:03.636Z",
+  "generator": "scripts/render-layout-fixtures.mjs",
+  "browser": "Edg/156.0.4314.50",
+  "node": "24.12.0",
+  "scale": 1,
+  "fixtures": [
+    {
+      "id": "01-article-light",
+      "html": "html/01-article-light.html",
+      "width": 1080,
+      "height": 1793,
+      "scale": 1,
+      "png": "screens/01-article-light@1080.png",
+      "groundTruth": "ground-truth/01-article-light@1080.json",
+      "pngSha256": "6f7d5f608f7ebb0dfa9a3b9b91ee4d5fcb007ae44a5528d09b53165adee65f2c",
+      "tags": [
+        "light",
+        "card",
+        "figure-right",
+        "caption",
+        "quote",
+        "mixed"
+      ],
+      "orderStrict": true,
+      "note": "浅色卡片文章：左文右图 + 图注 + 引用 + 双图。对应截图 A/C 与 B 的关系。",
+      "regionCount": 17
+    },
+    {
+      "id": "02-article-paper",
+      "html": "html/02-article-paper.html",
+      "width": 1080,
+      "height": 1264,
+      "scale": 1,
+      "png": "screens/02-article-paper@1080.png",
+      "groundTruth": "ground-truth/02-article-paper@1080.json",
+      "pngSha256": "8f27999bf55cb13fe4cde6c45a27037aaebf52b0b4bdd73576a735d5045eee57",
+      "tags": [
+        "background",
+        "paper",
+        "float",
+        "caption",
+        "serif",
+        "mixed"
+      ],
+      "orderStrict": true,
+      "note": "纸张纹理背景 + 图片右浮动 + 正文环绕；测试同一横带内文字与图片的分离。",
+      "regionCount": 13
+    },
+    {
+      "id": "03-news-columns",
+      "html": "html/03-news-columns.html",
+      "width": 1080,
+      "height": 1834,
+      "scale": 1,
+      "png": "screens/03-news-columns@1080.png",
+      "groundTruth": "ground-truth/03-news-columns@1080.json",
+      "pngSha256": "57b952f422539e1d555f30671e55fd64fc75abf3b5fb8c8dfdf26a1b1a8ce65c",
+      "tags": [
+        "plain",
+        "news",
+        "two-column",
+        "table",
+        "caption",
+        "wide-figure"
+      ],
+      "orderStrict": true,
+      "note": "白底无卡片：通栏标题 + 大图 + 双栏正文 + 右栏相关阅读/表格。双栏顺序必须左栏读完再右栏。",
+      "regionCount": 19
+    },
+    {
+      "id": "04-social-feed",
+      "html": "html/04-social-feed.html",
+      "width": 1080,
+      "height": 1862,
+      "scale": 1,
+      "png": "screens/04-social-feed@1080.png",
+      "groundTruth": "ground-truth/04-social-feed@1080.json",
+      "pngSha256": "998eb7cfb9c333f010dfde08d1f7f1efe440abbc2dcc3e4c1255a08fae39b613",
+      "tags": [
+        "background",
+        "social",
+        "card",
+        "avatar",
+        "ui-row",
+        "grid"
+      ],
+      "orderStrict": true,
+      "note": "社交信息流：头像/昵称/正文/图片/操作栏；操作栏是 UI，不参与切分。",
+      "regionCount": 13
+    },
+    {
+      "id": "05-chat",
+      "html": "html/05-chat.html",
+      "width": 1080,
+      "height": 1297,
+      "scale": 1,
+      "png": "screens/05-chat@1080.png",
+      "groundTruth": "ground-truth/05-chat@1080.json",
+      "pngSha256": "669e49c7a4c460e405aefe0b73fb5394a8b071feb37b6fb710d34f7c92194677",
+      "tags": [
+        "background",
+        "chat",
+        "bubble",
+        "left-right",
+        "ui-chrome"
+      ],
+      "orderStrict": true,
+      "note": "聊天记录：左右气泡、时间戳、图片消息、语音、输入栏；测试左右交替但纵向阅读的顺序。",
+      "regionCount": 10
+    },
+    {
+      "id": "06-product",
+      "html": "html/06-product.html",
+      "width": 1080,
+      "height": 2086,
+      "scale": 1,
+      "png": "screens/06-product@1080.png",
+      "groundTruth": "ground-truth/06-product@1080.json",
+      "pngSha256": "21bd23ed38e9a8b4267ed050f878ab8fa04492f150e28ed92e4d9fc9c98c8ae4",
+      "tags": [
+        "plain",
+        "product",
+        "gallery-left",
+        "table",
+        "reviews"
+      ],
+      "orderStrict": true,
+      "note": "电商详情：左图右文 + 规格表 + 详情图 + 评价；表格整块保留。",
+      "regionCount": 16
+    },
+    {
+      "id": "07-dashboard",
+      "html": "html/07-dashboard.html",
+      "width": 1920,
+      "height": 1080,
+      "scale": 1,
+      "png": "screens/07-dashboard@1920.png",
+      "groundTruth": "ground-truth/07-dashboard@1920.json",
+      "pngSha256": "919ebdd7e8746871cc70137a3838b6fac21e500fef0fe29646c23a885a16e65f",
+      "tags": [
+        "wide",
+        "desktop",
+        "sidebar",
+        "kpi",
+        "chart",
+        "table",
+        "chrome"
+      ],
+      "orderStrict": false,
+      "note": "1920 宽后台：侧栏 + 顶栏 + KPI + 图表 + 表格；宽图必须横向切 tile。顺序有歧义（侧栏/顶栏），只做弱断言。",
+      "regionCount": 14
+    },
+    {
+      "id": "08-dark-article",
+      "html": "html/08-dark-article.html",
+      "width": 1080,
+      "height": 1549,
+      "scale": 1,
+      "png": "screens/08-dark-article@1080.png",
+      "groundTruth": "ground-truth/08-dark-article@1080.json",
+      "pngSha256": "531ac31f263125e2937d085a323aede8260c96a19a0d68eab2715cfa3e70ae8d",
+      "tags": [
+        "dark",
+        "background",
+        "code",
+        "caption",
+        "mixed"
+      ],
+      "orderStrict": true,
+      "note": "深色模式文章：深底浅字 + 代码块；测试暗色背景估计与拉丁行不硬切。",
+      "regionCount": 13
+    },
+    {
+      "id": "09-poster",
+      "html": "html/09-poster.html",
+      "width": 1080,
+      "height": 1600,
+      "scale": 1,
+      "png": "screens/09-poster@1080.png",
+      "groundTruth": "ground-truth/09-poster@1080.json",
+      "pngSha256": "3e20ec03c70a8227c9bff6ed7af6c429c626c19c49c239f6bfc996f10f84ecb2",
+      "tags": [
+        "poster",
+        "background",
+        "text-over-image",
+        "hard-negative"
+      ],
+      "orderStrict": false,
+      "note": "海报：大字叠在渐变/纹理上；允许整页回退原图，要求内容完整、不切碎。",
+      "regionCount": 7
+    },
+    {
+      "id": "10-long-feed",
+      "html": "html/10-long-feed.html",
+      "width": 1080,
+      "height": 7539,
+      "scale": 1,
+      "png": "screens/10-long-feed@1080.png",
+      "groundTruth": "ground-truth/10-long-feed@1080.json",
+      "pngSha256": "fd6968f70549342104d882d0c153cdd442264c40efe49013b52244a970a818ea",
+      "tags": [
+        "long",
+        "tiling",
+        "feed",
+        "card",
+        "repeated"
+      ],
+      "orderStrict": true,
+      "note": "14 条重复信息流（约 8k–9k 高），用于 tile 网格、跨 tile 去重、长图内存。",
+      "regionCount": 58
+    },
+    {
+      "id": "11-doc-two-column",
+      "html": "html/11-doc-two-column.html",
+      "width": 1080,
+      "height": 1392,
+      "scale": 1,
+      "png": "screens/11-doc-two-column@1080.png",
+      "groundTruth": "ground-truth/11-doc-two-column@1080.json",
+      "pngSha256": "0badac1878fa99adb2778a42d47c613f48fd8b0743c43f8ae09d3167a46cd531",
+      "tags": [
+        "plain",
+        "document",
+        "two-column",
+        "equation",
+        "table",
+        "serif"
+      ],
+      "orderStrict": true,
+      "note": "论文双栏：通栏标题/摘要 + 左右栏 + 公式 + 表格 + 脚注；模型训练分布内，应作为高基线。",
+      "regionCount": 21
+    },
+    {
+      "id": "12-tight-sensitive",
+      "html": "html/12-tight-sensitive.html",
+      "width": 1080,
+      "height": 1229,
+      "scale": 1,
+      "png": "screens/12-tight-sensitive@1080.png",
+      "groundTruth": "ground-truth/12-tight-sensitive@1080.json",
+      "pngSha256": "2c6cf079f429d6d15cbdb6f462dac7529b61fd3d9d43ff0c3009a4cd0325ba89",
+      "tags": [
+        "plain",
+        "tight",
+        "forced-cut",
+        "sensitive",
+        "url",
+        "code",
+        "price"
+      ],
+      "orderStrict": true,
+      "note": "紧排粗体中文，硬缝很少；价格/URL/代码/电话是敏感行，禁止强制切。强制切本身另用合成 TextLine 单测。",
+      "regionCount": 15
+    }
+  ]
+}

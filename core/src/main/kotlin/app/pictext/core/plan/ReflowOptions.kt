@@ -7,7 +7,10 @@ package app.pictext.core.plan
  * @param forceTwo 调试/特殊版面：忽略短行门槛，所有非居中文字行都切。
  * @param forceReflow 用户明确点了“×2/×4”时打开：跳过“长行不足/收益不足/多栏”这些前置判断，
  *   只要图上还有文字行就照着重排（切点不安全时退化为整页放大，而不是整页原图）。
- * @param scaleMultiplier 在算法算出的 bodyScale 上再乘一个系数（×4 = 2.0，即“在 ×2 的基础上再放大一倍”）。\n * @param maxSegments 一行最多切成几段：2 = 左右对半；4 = 半行仍放不下时再对半（×4 模式）。
+ * @param scaleMultiplier 在算法算出的 bodyScale 上再乘一个系数（×4 = 2.0）。大于 1 时规划器走
+ *   **二次重排**：把 ×2 的结果当一张新图，字号翻倍后放不下的行按候选字缝再切 2/4 段，
+ *   而不是简单把倍率乘上去再压回列宽（那样同页会出现两三种字号）。
+ * @param maxSegments 二次重排时一行最多切几段：4 = 需要时切 4 段；2 = 只对半。
  */
 data class ReflowOptions(
     val outputWidth: Int,

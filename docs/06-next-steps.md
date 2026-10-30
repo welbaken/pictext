@@ -1,6 +1,7 @@
 # 06 · 下一步完善计划
 
-> 依据：`testdata/report.md`、`testdata/samples/` 三张原图、`testdata/out/*/{after,debug}.png` 与 `plan.json`。
+> 依据：`testdata/report.md`、`testdata/private/samples/` 三张原图、`testdata/out/*/{after,debug}.png` 与 `plan.json`。
+> **V2 计划（版面模型 + 阅读顺序 + 强制切 + HTML 夹具）见 [07-v2-plan.md](07-v2-plan.md)；本文的 v1.1/v1.2 结论是 V2 的基线。**
 > 产物：[Twitter](../testdata/out/twitter/after.png) · [日本新闻](../testdata/out/news_jp/after.png) · [XERJ](../testdata/out/xerj/after.png) · [Arknights 硬样例](../testdata/out/arknights/after.png)
 > 代码基线：当前 `core/`（`RowSegmenter` → `RowDecomposer` → `RowClassifier` → `ColumnSplitter` → `ReflowPlanner` → `PlanAuditor`）。
 > 范围：v1.1（P0）/ v1.2（P1）/ v1.3（P2）。仍然不引入 OCR、模型、网络和第三方图像库。
@@ -43,7 +44,7 @@ P0-0 … P0-5、P1-1（默认关）、P1-3、P1-4 已落地，`./gradlew :core:t
 
 ### 0.2 P1-2 结果：样例扩到 4 + 18 张（2026-10-29）
 
-`testdata/samples2/` 新增 18 张真实截图（贴吧/知乎/微博/X/新闻/韩语/希伯来语/横向长条等），
+`testdata/private/samples2/` 新增 18 张真实截图（贴吧/知乎/微博/X/新闻/韩语/希伯来语/横向长条等），
 `scripts/score-samples.ps1` 逐张跑 CLI 并生成 [scoreboard](../testdata/scoreboard.md)；
 人工评分写在同目录的 `notes.csv` 里（脚本会合并），重新生成不会丢。
 
@@ -67,7 +68,7 @@ P0-0 … P0-5、P1-1（默认关）、P1-3、P1-4 已落地，`./gradlew :core:t
 
 ### 0.2b 带手写标记的样例（2026-10-29）
 
-`testdata/samples_mark/` 两张“用户自己画过重点”的图：
+`testdata/private/samples_mark/` 两张“用户自己画过重点”的图：
 
 | 样例 | 标记 | 结果 |
 |---|---|---|
@@ -86,6 +87,31 @@ P0-0 … P0-5、P1-1（默认关）、P1-3、P1-4 已落地，`./gradlew :core:t
    属于已知限制，记在 docs/02 的失败模式里。
 4. CLI 读不了 webp（Java ImageIO 没有 webp 解码器），App 侧 BitmapFactory 可以——这条只影响桌面调试工具，
    已在 `scripts/score-samples.ps1` 里用“webp 跳过/先转 png”绕过。
+
+### 0.2c ×4 二次重排与原图拖动方向（2026-10-29）
+
+用户验收反馈两条，根因都在代码而不是参数：
+
+| 反馈 | 根因 | 修复 |
+|---|---|---|
+| 原图模式里「滑动的方向与图片移动方向相反」 | `OriginalPage` 的 `offset` 是“视口左上角在缩放后图片上的位置”，画面画在 `-offset` 处，但手势用了 `offset + pan`；pan 是手指位移，加它等于让画面反向走 | 改成 `offset - pan`（缩放锚点不变），并在 `docs/03` §6.5 写清符号约定 |
+| 「×2 到 ×4 应该是对 ×2 图片重新处理，但基本都没有重排，只是单纯放大字体」 | ① 4 段切点只在 `AnalysisOptions.splitSegments = 4` 时才算，App 用默认值 2 → `TextLine.cuts` 永远为空；② 规划器只有“半行仍放不下**且**有 3 个切点”才切 4 段，其余一律 `min(倍率, 列宽/段宽)` 压回列宽；③ `maxScale` 在 ×4 时传 6，再乘 2 → 实际上限 12，与 `docs/01` 写明的 6 不一致 | 分析期无条件算好**候选字缝**；规划器新增**二次重排**：按 `ceil(行宽 × s4 / 列宽)` 决定切 2/4 段，再从候选缝里为每个理想分界点挑最近的一刀；`maxScale` 统一 3，最终上限 6 |
+
+实测（同一台机器、`--out-width 1080`，CLI 新增 `--x4` / `--dump-lines` 便于复现）：
+
+| 样例 | ×2 项数 | ×4 项数 | BODY 字号偏差（×4） |
+|---|---|---|---|
+| Twitter | 21 | 31 | 0.499 → **0.010** |
+| 日本新闻 | 12 | 22 | 0.168 → **0.001** |
+| samples2 18 张 | — | — | 除拉丁/无安全缝页外均 ≤ 0.05 |
+| Arknights（硬样例） | ORIGINAL | 1.00 | 0.96 → 1.00（只放大不缩小） |
+
+- `:core:test` 95 个用例全绿（新增 6 个：4 段等分、短行二次切分、无安全缝不硬切、NO_SPLIT→REFLOW、候选缝只给正文、UI 行无候选缝）；
+- 已知限制：拉丁/代码行（P1-1 默认关）与 `cuts` 为空的行仍然只能整行放大并被压小，属设计取舍；
+- 分析耗时没有变差：候选缝是一次线性扫描，比原来“每行三次找缝”更便宜（Twitter 仍在 100–140ms 区间）。
+
+> 说明：原对比图包含第三方截图，按 `testdata/README.md` 的策略不随仓库分发；本地跑
+> `scripts/test-samples.ps1`（或 `:cli --x4`）可复现同样的左右对比。
 
 ### 与计划不一致的地方（需要 review）
 
@@ -125,7 +151,8 @@ P0-0 … P0-5、P1-1（默认关）、P1-3、P1-4 已落地，`./gradlew :core:t
 | 日本新闻 | 正文半行 | 330 → 928 | **2.81×** | 正文按目标字号放大 |
 | XERJ | 整页 | 1080 → 1080 | **1.035×** | `NO_SPLIT`，输出 1080×1000 |
 
-![三张真实图片的产物复盘](assets/next-steps-evidence.png)
+> 说明：三张真实图片的复盘图包含第三方截图，不随仓库分发；本地跑 `scripts/test-samples.ps1`
+> 会在 `testdata/out/` 下生成 `after/debug/plan.json`，可自行拼复核图。
 
 ### 1.2 第一版报告与产物的偏差（已校正）
 
@@ -147,7 +174,7 @@ P0-0 … P0-5、P1-1（默认关）、P1-3、P1-4 已落地，`./gradlew :core:t
 
 ### 1.4 新增硬样例：Arknights 海报
 
-2026-10-29 补充了 `testdata/samples/arknights.jpg`（1000×2100，明日方舟活动宣传图，© Hypergryph，仅本地测试用）。文字（特性、天赋、技能说明）叠在人物、雪景和大字标题上。
+2026-10-29 补充了 `testdata/private/samples/arknights.jpg`（1000×2100，明日方舟活动宣传图，© Hypergryph，仅本地测试用）。文字（特性、天赋、技能说明）叠在人物、雪景和大字标题上。
 
 CLI 实测：
 
@@ -258,7 +285,7 @@ P1-3 依赖 P0-4；P1-4 独立
 
 **做法**
 
-1. 在 `:core` 增加 `RealImageRegressionTest`，通过 Gradle 的 `systemProperty("pictext.root", rootDir)` 读取 `testdata/samples/`，不复制图片。
+1. 在 `:core` 增加 `RealImageRegressionTest`，通过 Gradle 的 `systemProperty("pictext.root", rootDir)` 读取 `testdata/private/samples/`，不复制图片。
 2. 先做“表征测试”：只打印/断言不崩、所有 `src` 在界内、`items` 非空、`mode` 合法；把当前 `lines/figures/splitX/scale/mode` 写进 `core/src/test/resources/golden/real/*.json`。
 3. 增加 `PlanAudit`（core 内部即可）：
    - 每个 `Block` 是否至少有一个 `RenderItem`；
@@ -650,17 +677,17 @@ powershell -ExecutionPolicy Bypass -File scripts/test-samples.ps1
 ## 9. 复现命令
 
 ```bash
-# 单测（含真实图片回归，读取 testdata/samples，不复制图片）
+# 单测（含真实图片回归，读取 testdata/private/samples，不复制图片）
 ./gradlew :core:test
 
 # 四张真实样例：输出 after/debug/plan，并由同一次运行生成 manifest/report/summary
 powershell -ExecutionPolicy Bypass -File scripts/test-samples.ps1
 
 # 单张调参
-./gradlew :cli:run --args="testdata/samples/twitter.jpg testdata/out/twitter --out-width 1080"
+./gradlew :cli:run --args="testdata/private/samples/twitter.jpg testdata/out/twitter --out-width 1080"
 
 # 打开拉丁实验（默认关）
-./gradlew :cli:run --args="testdata/samples/xerj.jpg testdata/out/xerj --out-width 1080 --latin-split"
+./gradlew :cli:run --args="testdata/private/samples/xerj.jpg testdata/out/xerj --out-width 1080 --latin-split"
 
 # 拼复核长图
 ./gradlew :cli:run --args="summary testdata/out/summary.png testdata/out/twitter/after.png testdata/out/news_jp/after.png"

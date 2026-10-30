@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>论文双栏 · 公式与脚注</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  body { background: #ffffff; color: #1c1c1c; }
+  .page { max-width: 1080px; padding: 34px 52px 54px; font-family: "SimSun", "Songti SC", "Noto Serif CJK SC", serif; }
+  .preprint { display: flex; align-items: center; font-size: 14px; color: #666; letter-spacing: 2px;
+              border-bottom: 1px solid #bbb; padding-bottom: 8px; margin-bottom: 22px; }
+  .preprint .spacer { flex: 1; }
+  h1 { font-size: 32px; line-height: 1.45; text-align: center; margin: 6px 0 10px; letter-spacing: 1px; }
+  .authors { text-align: center; font-size: 18px; line-height: 1.7; margin-bottom: 4px; }
+  .affil { text-align: center; font-size: 14px; color: #666; margin-bottom: 22px; }
+  .abstract { border-top: 1px solid #bbb; border-bottom: 1px solid #bbb; padding: 14px 0; margin: 0 0 24px; }
+  .abstract b { font-size: 16px; letter-spacing: 2px; }
+  .abstract p { font-size: 17px; line-height: 1.8; margin: 8px 0 0; text-align: justify; }
+  .cols { display: flex; gap: 40px; align-items: flex-start; }
+  .cols .col { flex: 1 1 0; min-width: 0; }
+  .cols h2 { font-size: 19px; margin: 18px 0 8px; }
+  .cols p { font-size: 17px; line-height: 1.95; margin: 0 0 12px; text-align: justify; text-indent: 2em; }
+  .cols p.noindent { text-indent: 0; }
+  .eq {
+    text-align: center; font: 17px/1.9 "Cambria Math", "Times New Roman", serif;
+    margin: 14px 0; padding: 8px 0; border-top: 1px solid #eee; border-bottom: 1px solid #eee;
+  }
+  .eq .no { float: right; }
+  .table-wrap { margin: 12px 0; }
+  table { font-size: 14px; }
+  th, td { padding: 6px 8px; }
+  .footnote { border-top: 1px solid #bbb; margin-top: 26px; padding-top: 10px; font-size: 13px; line-height: 1.7; color: #444; }
+  .pageno { text-align: center; font-size: 13px; color: #666; margin-top: 18px; }
+  sup { font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="preprint" data-region="preprint" data-kind="chrome" data-order="1">
+    <span>PREPRINT · 2026-10</span><span class="spacer"></span><span>本地版 · 未经同行评审</span>
+  </div>
+
+  <h1 data-region="title" data-kind="title" data-order="2">窄屏阅读中的行切分与阅读顺序：<br>一个端侧可回退的版面重排方法</h1>
+  <div class="authors" data-region="authors" data-kind="text" data-order="3">
+    林一<sup>1</sup> &nbsp; 周其<sup>1,2</sup> &nbsp; 李牧<sup>2</sup>
+  </div>
+  <div class="affil" data-region="affil" data-kind="text" data-order="4">
+    <sup>1</sup> 端侧阅读实验室 &nbsp;&nbsp; <sup>2</sup> 城市大学 人机交互系
+  </div>
+
+  <div class="abstract" data-region="abstract" data-kind="text" data-order="5">
+    <b>摘要</b>
+    <p>移动设备上的长图阅读受限于屏幕宽度，正文常被压缩到可读下限以下。本文提出一种端侧版面重排方法：
+    先用轻量版面模型识别区域与类别，再用投影分析在区域内恢复像素级行带与安全切点，最后按横带优先、
+    左右次之的顺序把区域排成单列。方法不依赖 OCR，所有像素原样搬运；当覆盖率或切点质量不达标时，
+    整页回退到原图。我们在 18 张真实截图与 10 组可复现的 HTML 版面上评估了该方法。</p>
+  </div>
+
+  <div class="cols">
+    <div class="col">
+      <h2 data-region="l-h2" data-kind="title" data-order="6">1 引言</h2>
+      <p data-region="l-p1" data-kind="text" data-order="7">
+        把一张 1080 像素宽的截图放进 393dp 的手机，系统会先把它缩到屏宽。图里的 22 像素正文，
+        落到屏幕上只剩八号字。读者能做的只有放大，然后在每一次拖动之后重新找回位置。
+      </p>
+      <p data-region="l-p2" data-kind="text" data-order="8">
+        重排工具试图解决这一步：不识别文字，只把版面当成由行和块组成的图，找到行，判断哪些行可以切开，
+        再把切开的两半按阅读顺序插回一条更窄的列里。问题在于，切点必须落在字缝里，而不是几何中点。
+      </p>
+      <div class="eq" data-region="eq1" data-kind="text" data-order="9">
+        gain = s · W<sub>src</sub> / W<sub>out</sub>
+        <span class="no">(1)</span>
+      </div>
+      <p data-region="l-p3" data-kind="text" data-order="10">
+        当 gain 小于 1.25 时，切分只会让文章更长、字号更小。因此收益门槛必须与切点质量一起判断，
+        任何一项不达标都退回原图，而不是输出一个“看起来重排了”的页面。
+      </p>
+      <h2 data-region="l-h3" data-kind="title" data-order="11">2 方法</h2>
+      <p data-region="l-p4" data-kind="text" data-order="12">
+        方法分为四步：区域检测、区域细化、阅读顺序、按需切分。区域检测只提供 ROI 与类别，
+        行带与切点由投影分析在 ROI 内恢复；阅读顺序用递归 XY-cut；切分按输出列宽逐行计算段数。
+      </p>
+    </div>
+
+    <div class="col">
+      <h2 data-region="r-h2" data-kind="title" data-order="13">3 实验</h2>
+      <p data-region="r-p1" data-kind="text" data-order="14">
+        真实截图来自公开分享的公众号、社交卡片与新闻门户，共 18 张；合成版面由本地 HTML 渲染，
+        覆盖浅色、纸张、深色、海报、双栏、表格与超长信息流。合成版面的每个语义块都带 DOM 真值，
+        可以直接计算区域召回与顺序准确率。
+      </p>
+      <p data-region="r-p2" data-kind="text" data-order="15">
+        所有实验在中端机上完成，分析耗时取三次中位数。长图按 480 的 tile 切分，重叠 64 像素，
+        最后一列/行贴边，不补边；短边小于一个 tile 时才居中补边。
+      </p>
+      <div class="table-wrap">
+        <table data-region="r-table" data-kind="table" data-order="16">
+          <thead><tr><th>方法</th><th>顺序正确</th><th>覆盖</th><th>耗时</th></tr></thead>
+          <tbody>
+            <tr><td>v1 投影</td><td>11/18</td><td>100%</td><td>98ms</td></tr>
+            <tr><td>v2 模型+投影</td><td>16/18</td><td>99.7%</td><td>312ms</td></tr>
+            <tr><td>v2 无覆盖审计</td><td>16/18</td><td>96.2%</td><td>286ms</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p data-region="r-p3" data-kind="text" data-order="17">
+        去掉覆盖审计后，顺序指标不变，但覆盖率跌到 96.2%：漏检的图注和页脚被静默丢弃。
+        这说明“模型 + 顺序”不足以支撑一个阅读工具，覆盖审计是必需项。
+      </p>
+      <h2 data-region="r-h3" data-kind="title" data-order="18">4 结论</h2>
+      <p data-region="r-p4" data-kind="text" data-order="19">
+        模型负责语义与顺序，投影负责像素与切点，覆盖审计负责不丢内容。三者分开，任何一项失败都能回退。
+        下一步是在更多真实设备上验证长图的内存与首屏表现。
+      </p>
+    </div>
+  </div>
+
+  <div class="footnote" data-region="footnote" data-kind="text" data-order="20">
+    基金项目：端侧阅读实验室开放课题（No. 2026-07）。通信作者：周其。本文中的合成版面与真值脚本随仓库提供，
+    可离线复现；真实截图已去除个人信息。
+  </div>
+  <div class="pageno" data-region="pageno" data-kind="chrome" data-order="21">1 / 4</div>
+</div>
+</body>
+</html>

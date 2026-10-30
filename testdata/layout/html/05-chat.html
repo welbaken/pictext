@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>聊天记录 · 左右气泡</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  body { background: #efeae1; }
+  .app { width: 100%; max-width: 1080px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+  .chat-head {
+    display: flex; align-items: center; gap: 14px; padding: 18px 28px;
+    background: rgba(255,255,255,.82); border-bottom: 1px solid #e2dcd1;
+  }
+  .chat-head .who { font-size: 21px; font-weight: 800; }
+  .chat-head .status { font-size: 14px; color: #6f7a6f; }
+  .chat-head .back { font-size: 26px; color: #4a4f5c; width: 30px; }
+  .chat-body { flex: 1; padding: 26px 28px 20px; }
+  .date { text-align: center; font-size: 14px; color: #8b8578; margin: 6px 0 22px; }
+  .msg { display: flex; gap: 12px; margin-bottom: 20px; align-items: flex-start; }
+  .msg.out { flex-direction: row-reverse; }
+  .bubble {
+    max-width: 72%; padding: 14px 18px; border-radius: 16px;
+    background: #fff; font-size: 21px; line-height: 1.7; color: #24211c;
+    box-shadow: 0 1px 1px rgba(60,50,30,.06);
+  }
+  .msg.out .bubble { background: #95ec69; }
+  .bubble .quote-line {
+    border-left: 3px solid #c9c2b2; padding-left: 10px; color: #6f6a5f;
+    font-size: 17px; line-height: 1.6; margin-bottom: 8px;
+  }
+  .bubble .time { display: block; text-align: right; font-size: 12px; color: #8b8578; margin-top: 6px; }
+  .img-msg { width: 360px; height: 260px; border-radius: 12px; }
+  .voice { display: flex; align-items: center; gap: 10px; min-width: 180px; }
+  .voice .bars { display: flex; gap: 3px; align-items: center; height: 22px; }
+  .voice .bars i { width: 3px; background: #4a4f5c; border-radius: 2px; }
+  .voice .bars i:nth-child(1) { height: 8px; }
+  .voice .bars i:nth-child(2) { height: 14px; }
+  .voice .bars i:nth-child(3) { height: 20px; }
+  .voice .bars i:nth-child(4) { height: 11px; }
+  .inputbar {
+    display: flex; align-items: center; gap: 12px; padding: 14px 22px 22px;
+    background: #f7f4ee; border-top: 1px solid #e2dcd1;
+  }
+  .inputbar .field { flex: 1; height: 46px; border-radius: 10px; background: #fff; border: 1px solid #e2dcd1; }
+  .inputbar .icon { width: 40px; height: 40px; border-radius: 50%; background: #fff; border: 1px solid #e2dcd1; }
+  .inputbar .send { width: 74px; height: 42px; border-radius: 9px; background: #07c160; color: #fff;
+                    display: flex; align-items: center; justify-content: center; font-size: 17px; }
+  .sys { text-align: center; font-size: 14px; color: #8b8578; margin: 8px 0 20px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="chat-head" data-region="chat-head" data-kind="chrome" data-order="1">
+    <div class="back">‹</div>
+    <div class="avatar avatar--sm avatar--blue"></div>
+    <div>
+      <div class="who">版面实验室</div>
+      <div class="status">3 人 · 正在输入…</div>
+    </div>
+    <div style="flex:1"></div><div style="font-size:24px;color:#4a4f5c">···</div>
+  </header>
+
+  <main class="chat-body">
+    <div class="date" data-region="date" data-kind="ui" data-order="2">今天 14:32</div>
+
+    <div class="msg">
+      <div class="avatar avatar--sm avatar--blue"></div>
+      <div class="bubble" data-region="m1" data-kind="text" data-order="3">
+        我把那张 1080×20000 的长图跑完了，20 个 tile，模型 380ms，投影细化 620ms。
+        <span class="time">14:32</span>
+      </div>
+    </div>
+
+    <div class="msg out">
+      <div class="avatar avatar--sm avatar--green"></div>
+      <div class="bubble" data-region="m2" data-kind="text" data-order="4">
+        首屏呢？用户能接受等一秒吗？
+        <span class="time">14:33</span>
+      </div>
+    </div>
+
+    <div class="msg">
+      <div class="avatar avatar--sm avatar--blue"></div>
+      <div class="bubble" data-region="m3" data-kind="text" data-order="5">
+        <div class="quote-line">周其：先把前 3 个 tile 的分析结果出出来，剩下的后台补。</div>
+        首屏 900ms 左右。如果先只分析第一屏，可以压到 500ms，但计划高度会跳变。
+        <span class="time">14:34</span>
+      </div>
+    </div>
+
+    <div class="msg out">
+      <div class="avatar avatar--sm avatar--green"></div>
+      <div class="bubble" data-region="m4" data-kind="text" data-order="6">
+        先别做渐进式，计划跳变比多等 300ms 更难受。把进度条做诚实就行。
+        <span class="time">14:35</span>
+      </div>
+    </div>
+
+    <div class="msg">
+      <div class="avatar avatar--sm avatar--blue"></div>
+      <div class="bubble" data-region="m5" data-kind="text" data-order="7" style="padding:8px">
+        <div class="img-msg ph ph--grid" data-label="IMG 04" role="img" aria-label="长图分块截图"></div>
+        <span class="time" style="padding-right:8px">14:36</span>
+      </div>
+    </div>
+
+    <div class="msg out">
+      <div class="avatar avatar--sm avatar--green"></div>
+      <div class="bubble" data-region="m6" data-kind="text" data-order="8">
+        <div class="voice">
+          <div class="bars"><i></i><i></i><i></i><i></i></div>
+          <span style="font-size:17px">12″</span>
+        </div>
+        <span class="time">14:37</span>
+      </div>
+    </div>
+
+    <div class="sys" data-region="sys" data-kind="ui" data-order="9">对方已读 · 端到端加密</div>
+  </main>
+
+  <footer class="inputbar" data-region="inputbar" data-kind="chrome" data-order="10">
+    <div class="icon"></div>
+    <div class="field"></div>
+    <div class="icon"></div>
+    <div class="send">发送</div>
+  </footer>
+</div>
+</body>
+</html>

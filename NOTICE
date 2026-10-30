@@ -1,0 +1,21 @@
+图读 PicText
+Copyright 2026 PicText contributors
+
+This product includes software and model weights developed by third parties.
+The full license texts and attribution are in THIRD_PARTY_LICENSES.md.
+
+PP-DocLayout-S
+Copyright PaddlePaddle Authors
+Licensed under the Apache License, Version 2.0.
+Source: https://huggingface.co/PaddlePaddle/PP-DocLayout-S
+Documentation: https://www.paddleocr.ai/main/version3.x/module_usage/layout_detection.html
+The official Paddle inference weights were converted to ONNX with Paddle2ONNX
+for on-device inference. The conversion is a format change; the model weights
+remain under the upstream license.
+
+ONNX Runtime
+Copyright (c) Microsoft Corporation. All rights reserved.
+Licensed under the MIT License.
+
+The Android app is built with Kotlin, AndroidX, Jetpack Compose and
+kotlinx.coroutines, all licensed under the Apache License, Version 2.0.
