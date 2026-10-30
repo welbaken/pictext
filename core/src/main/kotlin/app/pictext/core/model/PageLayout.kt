@@ -47,9 +47,19 @@ data class TextLine(
      * 空列表表示这一行找不到安全缝，×4 时只能整行放大（会被列宽压小，属已知限制）。
      */
     val cuts: List<Int> = emptyList(),
+    /**
+     * [v2] 三级切点特征（硬缝 / 软缝 / 强制切用的最小墨量列）与敏感行标记。
+     *
+     * `null` 表示这一行来自 v1 投影链路，没有 v2 特征；v2（`LayoutStrategy.DOC_LAYOUT`）
+     * 的每一行都必须带它，否则规划器只能把它当“不可切”。
+     */
+    val cutFeatures: LineCutFeatures? = null,
 ) {
     val height: Int get() = band.height
     val width: Int get() = band.width
+
+    /** 该行是否禁止强制切（拉丁/URL/代码/价格/长数字）。 */
+    val sensitive: Boolean get() = cutFeatures?.sensitive == true
 }
 
 /** 版面块。文字行按相邻关系聚成段落；非文字块整体放大，绝不切分。 */
@@ -78,9 +88,14 @@ data class Diagnostics(
 )
 
 /**
- * 一页图片的版面分析结果。所有矩形坐标都是 A（分析图）坐标。
+ * 一页图片的版面分析结果。矩形坐标由 [strategy] 决定：
  *
- * @param analysisScale `k = analysisWidth / srcWidth`，用于换算回源图。
+ * - [LayoutStrategy.PROJECTION]（v1）：A 坐标（分析图）；
+ * - [LayoutStrategy.DOC_LAYOUT]（v2）：**S 坐标**，`analysisScale = 1.0`。
+ *
+ * @param analysisScale `k = analysisWidth / srcWidth`，用于换算回源图；v2 恒为 1。
+ * @param regions v2 的区域列表，已按阅读顺序排好（`order` 单调递增）；v1 为空。
+ * @param strategy 哪条分析链路产出的这一页；规划器据此分流。
  */
 data class PageLayout(
     val srcWidth: Int,
@@ -97,6 +112,8 @@ data class PageLayout(
     val isDark: Boolean,
     val backgroundColor: Int,
     val diagnostics: Diagnostics,
+    val regions: List<LayoutRegion> = emptyList(),
+    val strategy: LayoutStrategy = LayoutStrategy.PROJECTION,
 ) {
     /** 所有文字行，按页面顺序展开。 */
     fun textLines(): List<TextLine> = blocks.flatMap { block ->
@@ -120,4 +137,21 @@ data class PageLayout(
         srcWidth,
         srcHeight,
     )
+
+    /** v2：按阅读顺序展开所有区域内的文字行。 */
+    fun regionLines(): List<TextLine> = regions.sortedBy { it.order }.flatMap { it.lines }
+
+    /** v2：每个语义类别的区域数。 */
+    fun regionKindCounts(): Map<RegionKind, Int> =
+        regions.groupingBy { it.kind }.eachCount()
+
+    /** v2：所有文字行的行高中位数（BODY 优先，没有 BODY 时退回全部文字行）。 */
+    fun bodyMedianLineHeight(): Float {
+        val all = regionLines()
+        val body = all.filter { it.role == LineRole.BODY }
+        val src = body.ifEmpty { all }
+        if (src.isEmpty()) return 0f
+        val heights = IntArray(src.size) { src[it].band.height }.sortedArray()
+        return heights[heights.size / 2].toFloat()
+    }
 }

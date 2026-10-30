@@ -10,6 +10,8 @@ coroutines = "1.9.0"
 junit = "4.13.2"
 androidxTest = "1.6.1"
 espresso = "3.6.1"
+# 桌面/Android 推理运行时。桌面只给 :cli 调参用，不进 APK（docs/07 §10.2）。
+onnxruntime = "1.19.2"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -30,6 +32,7 @@ junit = { module = "junit:junit", version.ref = "junit" }
 androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTest" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTest" }
 espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "espresso" }
+onnxruntime-desktop = { module = "com.microsoft.onnxruntime:onnxruntime", version.ref = "onnxruntime" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

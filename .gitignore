@@ -23,3 +23,12 @@ testdata/samples_mark/
 testdata/samples_ui/
 *.log
 *.idsig
+
+# 模型转换用的隔离 venv（607MB，绝不入库）
+tools/.venv-doclayout/
+
+
+# Python 缓存（模型转换/参考脚本用）
+__pycache__/
+*.pyc
+

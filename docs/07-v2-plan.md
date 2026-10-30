@@ -5,7 +5,10 @@
 > `testdata/private/samples*` 的 18 张真实截图、
 > 以及当前 `core/`（`RowSegmenter → RowClassifier → ColumnSplitter → ReflowPlanner`）的代码基线。
 > 范围：v2.0。仍然不做 OCR、不做语义理解、不联网；所有像素原样搬运。
-> 状态：**计划，待评审**。文中标“待复核”的模型数字，必须在 M0 用实际模型文件确认，不能直接写进代码。
+> 状态：**实施中**（2026-10-30）。M0 已完成并实测：官方模型契约已核对、ONNX 已产出并与官方 Paddle 对拍
+> ≤0.01px；`core/layout` 的检测后处理 / tile 网格 / 区域合并 / 细化 / 覆盖审计 / 阅读顺序 / 切点 / 规划 / 审计
+> 已实现并带单测。尚未完成：真实样例检测基线（V2-13）、App 接线（V2-32）、真机性能（V2-40）。进度见 §13。
+> 文中标“待复核”的模型数字已在 M0 用实际模型文件确认（见 §4.2 的实测块），代码以 `models/doclayout/contract.json` 为准。
 
 ---
 
@@ -173,7 +176,13 @@ v1 只需要行投影，86px 宽还能切行；但 v2 要送模型 480 宽，86p
 | 1080×20000 | 0.444 | 1080×1080 | 20 |
 | 1920×1080 | 0.350 | 1371×1371 | 2 |
 | 3000×2000 | 0.350 | 1371×1371 | 6 |
-| 600×800 | 0.800 | 600×600 | 1 |
+| 600×800 | 0.800 | 600×600 | 2 |
+
+> `600×800` 那一格原文写 1，按 §4.1 的公式是 **2**（`tileH = tileW = 600`、`stride = 536`、
+> `ceil((800-600)/536)+1 = 2`）。以公式为准，`TileGridTest` 已按 2 断言。
+>
+> M0 实测（2026-10-30）：ONNX 4.69MiB、opset 13、ORT CPU 单 tile 中位 **20.8ms**（x86 开发机，4 线程），
+> 与本节“20ms/tile”的预算假设一致；arm64 手机端仍未测。
 
 **后果**：20 个 tile × 20ms = 400ms，还没算解码、缩放、NMS、区域细化。
 如果按“模型只要 10ms”做预算，首屏必然超。
@@ -469,6 +478,34 @@ Kotlin/CLI 的结果再与 ONNX 参考对齐（同样 ≤2px）。
 
 > 只要第 1–5 条有一条猜错，框就会系统性偏移，后面所有验收都会变成“调参”。
 > 这是 M0 的唯一目的：**把不确定性关在模型契约里**。
+
+#### 4.2.1 M0 实测结果（2026-10-30，已落库）
+
+上面的模板是“写之前的样子”。实际模型跑通后，**有 6 处必须改**，原文保留是为了说明“照模板写会错”：
+
+| 模板里的写法 | 实测事实 | 影响 |
+|---|---|---|
+| 单个输入 | **两个**：`image [1,3,480,480]` + `scale_factor [1,2]` | 少喂一个直接报 missing input；`scale_factor` 恒喂 `[1,1]` |
+| 输出 `[1,100,6]` | `fetch_name_0` 是 **`[N,6]` 动态 N**（白图 N=7，截图可顶到 100）+ `fetch_name_1 [1] int32` 计数 | 必须按第 0 维实际长度解析，不能假设 100 |
+| `nmsBuiltIn: true`（0.4/0.6） | 图内确实有 NMS，但阈值是 **score 0.025 / iou 0.6 / keep_top_k 100** | **0.3 阈值 + 0.5 类内 NMS 必须客户端做**，否则低分垃圾框全进来 |
+| `padValue: 114` | **没有 padding**：`keep_ratio: false`，纯 stretch | 保留 `padValue` 只用于“页面小于一个 tile”时我们自己的居中填充 |
+| `artifact: PP-DocLayout-S_infer.tar` | HF 仓库是 PIR 三件套（`inference.json` + `.pdiparams` + `inference.yml`），没有 tar | `tarSha256` 不适用；转换必须装 `paddlepaddle`（paddle2onnx 2.1.0 的 `.pyd` 链接了 `libpaddle.pyd`） |
+| `labels[0] = doc_title`（本文 §4.3 的直觉） | 官方 `label_list[0]` 是 **`paragraph_title`**，`doc_title` 是 11 | 已按 `config.json` 硬校验，见 `ModelLabelsTest` |
+
+实测数字：
+
+```text
+ONNX     4,914,725 B（4.69 MiB）  sha256 3cfcad68…162e9  opset 13  IR 7  568 节点
+Paddle 3.1.1 vs ONNX   01-article-light 25/25 框、03-news-columns 31/31 框，
+                       类别零错配，坐标最大差 0.01px（要求 ≤2px）
+单 tile 推理            中位 20.8ms（x86 开发机 CPU，ORT 1.23.2，默认线程）
+```
+
+产物与证据：`models/doclayout/{contract.json,CONVERSION.md,PP-DocLayout-S.onnx,SHA256SUMS}`、
+`tools/doclayout_reference.py`（ONNX 参考）、`tools/compare_paddle_onnx.py`（对拍）。
+
+> 结论：第 1–5 条全部核实，`img_size` 是**固定 480**（锚点 4789 = 60²+30²+15²+8²），
+> 所以“动态 img_size 可以放大 tile”这条路走不通，§4.1 的 `modelInput = 480` 保持不变。
 
 ### 4.3 标签 → 角色映射
 
@@ -1562,3 +1599,76 @@ testdata/report-v2.md                  # 批量对比
 > 正确做法是：模型负责“哪些块、大概在哪、谁先谁后”，投影负责“这一行在哪、从哪切”，
 > 覆盖审计负责“一个像素都不能丢”。三件事分开，任何一件失败都能回退到 v1。
 > 如果只做第一件，V2 会比 V1 更糟。
+
+---
+
+## 13. 实施进度（2026-10-30）
+
+### 13.1 已完成
+
+| 任务卡 | 产物 | 验证 |
+|---|---|---|
+| M0 / V2-00 | `models/doclayout/{PP-DocLayout-S.onnx,contract.json,CONVERSION.md,SHA256SUMS,LICENSE.txt}`、`tools/doclayout_reference.py`、`tools/compare_paddle_onnx.py` | Paddle vs ONNX 对拍 0.01px；契约签名逐项实测 |
+| M0（夹具） | `testdata/layout/` 12 张 HTML 夹具 + DOM 真值 + `scripts/render-layout-fixtures.mjs` | `--check` 0 问题（上一轮已入库） |
+| V2-10 | `core/layout/{Detection,DetectionPostprocessor,ModelLabels,ModelContract}.kt` | `LabelAndDetectionTest`：阈值/NMS/跨类不抑制/越界裁剪/坐标误差 ≤1px/标签全覆盖 |
+| V2-11 | `core/layout/{LayoutTiler,LayoutPreprocessor,Tile,LayoutInput}.kt` | `TileGridTest`：五种尺寸 tile 数、贴边、重叠、补边、`maxTiles` |
+| V2-20 | `core/layout/{RegionBuilder,RegionKindFixer}.kt` | `RegionBuilderTest`：跨 tile 去重、包含去重、碎片合并、并排不合并、figure↔text 改判 |
+| V2-21 | `core/layout/RegionRefiner.kt` | `RegionRefinerTest`：行数/坐标 ≤1px、模型框 ±12px 不漂、竖线忽略、深色底、紧排行切点特征 |
+| V2-22 | `core/layout/CoverageAuditor.kt` | `CoverageAuditorTest`：漏检找回、纯图页零残差、>5% 回退、padding 不计墨 |
+| V2-23 | `core/layout/ReadingOrder.kt` | `ReadingOrderTest`：截图用例 `A C B D E F G H I J K L`、双栏、通栏标题、2×2、图注在右、1px 重叠不误判 |
+| V2-24 | `core/layout/PageComposer.kt` | `PageComposerTest`：S 坐标恒等、块映射、`medianLineHeight/Gap/Pitch` |
+| V2-30 | `core/plan/ReflowPlannerV2.kt` + `ReflowOptions` v2 字段 | `ReflowPlannerV2Test`：整行切 2 段、半宽长行切 2 段、半宽短行不切、图整块、统一 `s`、UI/CHROME 上限、强制切过多回退 |
+| V2-31 | `core/plan/LayoutAudit.kt` | `LayoutAuditTest`：9 类坏计划各自报出对应 issue |
+| 编排 | `core/plan/SmartReflow.kt`（v2 → v1 → 原图） | `SmartReflowTest`：模型缺失走 v1、v2 失败回退带诊断码、竖排走原图 |
+| V2-12（部分） | `cli/{Main,V2,DesktopLayoutDetector}.kt`：`--layout/--model/--detections/--dump-regions/--compare` | `:cli:run` 对 42 张（29 真实 + 12 夹具 + 1 设备截图）跑通；桌面 ORT 单 tile ≈20.8ms |
+| V2-13（部分） | `scripts/score-v2.ps1`、`testdata/report-v2.{md,csv}`、`testdata/layout/detection-baseline.md` | 37 张可解码图上 **v2 接管 31 张（84%）**、`auditV2` 31/31 通过、覆盖率 0.999+；6 张回退全部有诊断码 |
+
+### 13.1.1 检测基线摘要（详见 `testdata/layout/detection-baseline.md`）
+
+- 回退 6 张：2 张 `layout_too_few_regions`（仪表盘、模拟器启动器）、3 张 `compressed_ratio`（压缩行 11–14%）、
+  1 张 `layout_too_few_regions`（只认出 3 个区域）；**0 丢内容**。
+- 未测：区域召回/准确率、严格顺序准确率 —— 缺“GT 对比”工具（`ground-truth/*.json` 已有，
+  下一步用 `ReadingOrder` 直接吃 `box + order`，不需要模型）。
+- `.webp` 在 CLI 侧无法解码（`ImageIO` 限制），批量脚本标 `decode_failed` 并排除。
+
+### 13.2 与本文规格的偏差（都已在代码 KDoc 里写明原因）
+
+1. **敏感行只能用几何代理**：v2.0 不做 OCR，`hasUrlOrCode` / `digitHeavy` 无法从文本内容判断，
+   实现改为“墨簇宽度/间距/等宽性”的几何特征（`RegionRefiner`）。
+   **风险**：真实 URL/价格行的召回不保证；靠“`latinLike` ⇒ 敏感”兜住大多数英文/数字串。
+   这是本文 §4.8.2 表格里“URL/代码/价格零强制”这条承诺的**已知弱化点**，需要在 V2-13 用真实样例量化。
+2. **`CoverageReport.fallbackCode` 判定顺序**：先判残差、再判覆盖率。因为 `coverage = 1 - residualRatio`
+   恒成立，先判覆盖率会让 `layout_residual_high` 永远不可达。
+3. **区域细化的顺序**：本文 §3.1 的流程图把 `RegionKindFixer` 画在 `RegionRefiner` 之前，
+   但 §4.4.4 的判据（“figure 内细化出 ≥3 条稳定行”）必须有细化结果，所以实现是**先细化、再改判**。
+4. **TEXT 碎片合并的行高**：合并发生在细化之前，拿不到行高中位数，用“两框较矮者的 1/4”作代理并夹到 `[6,64]`。
+5. **`LayoutDetector.detect(input, tile)`**：比本文的 `detect(input)` 多一个 `tile` 参数。
+   脚本检测器要把已知的 S 坐标框回填到正确 tile；ORT 实现忽略它。
+6. **CLI 依赖用 `implementation`**：本文 §10.2 写 `runtimeOnly(libs.onnxruntime.desktop)`，
+   但适配器要引用 `ai.onnxruntime.*` 类型，`runtimeOnly` 编译不过。
+7. **`600×800` 的 tile 数是 2 不是 1**（见 §2.5 注）。
+8. **真实样例位置**：仓库里是 `testdata/samples/`（29 张，gitignore），不是文中写的 `testdata/private/samples*`。
+9. **残差补区先于回退闸门**：§4.6 原文“残差 >5% → 整页回退 v1”。实测发现一个被漏掉的
+   占位图/纯色卡片就能把单页残差顶到 20%（`01-article-light` 的两张占位图就是），
+   而补区本来就为此设计且不丢内容。实现改为：先补区 → 再判覆盖率；补区后仍 <99.5%，
+   或残差块数 >`maxResiduals(64)` 才回退，诊断码仍是 `layout_residual_high` / `layout_low_coverage`。
+10. **审计的两处语义收紧**（否则必然误报）：
+    - `compressedLineIdx` 只统计 **TEXT/TITLE/CAPTION**、且**不参与**“2% 偏差”检查——
+      压缩行是有意为之（计入 10% 门槛），否则两条规则互斥；CHROME/UI 按设计就是 `min(s,1.0)`，
+      算进“压缩行”会让每一页都超 10%；
+    - 比例门槛（敏感压缩 ≤5%、压缩行 ≤10%）在样本 <3 行时不生效（`MIN_RATIO_SAMPLE`），
+      否则“整页只有 1 行敏感行 → 压掉它 = 100% → 整页回退”会频繁误伤；小样本仍受
+      “敏感行零强制切”这条绝对门槛约束。
+11. **切分从 `needed` 往上试，而不是往下退**：±8% 窗口会让某一段比理想宽 8%，
+    它就只能被压缩（字号比同页小一截）。实现先找“每段都放得下 `s`”的最小段数
+    （`needed` 起往上到硬上限），仍不行才退到更少段数并压缩该行——“宁可多切，不降字号”。
+
+### 13.3 未完成（按优先级）
+
+1. **V2-13 检测基线**：29 张真实截图 + 12 张夹具跑 `--model`，产出 `testdata/layout/detection-baseline.md`
+   （区域召回/准确率、行覆盖、顺序、失败模式）。**这是判断“模型在手机截图上够不够用”的唯一依据**，
+   也是 §2.7 风险表里“召回 <70% 就暂停”的闸门。
+2. **V2-32 App 接线**：`OrtLayoutDetector` / `ModelAssets` / `AndroidTileSampler` / 设置项 `smartLayout`。
+   本机没有 Android SDK，需要先装 SDK 才能编译 `:app`。
+3. **V2-33 / V2-40 / V2-41**：批量 A/B 报告、长图/宽图性能、真机验收（MuMu 模拟器可连 `127.0.0.1:16416`）。
+4. **V2-42 量化**：不阻塞 v2.0。

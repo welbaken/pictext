@@ -2,8 +2,16 @@ package app.pictext.cli
 
 import app.pictext.core.analyze.AnalysisOptions
 import app.pictext.core.analyze.LayoutAnalyzer
+import app.pictext.core.layout.GrayPageRegionSampler
+import app.pictext.core.layout.GrayPageTileSampler
+import app.pictext.core.layout.LayoutDetector
+import app.pictext.core.layout.LayoutOptions
+import app.pictext.core.layout.LayoutOutcome
+import app.pictext.core.layout.ModelContract
+import app.pictext.core.layout.PageContext
 import app.pictext.core.model.Block
 import app.pictext.core.model.FigureKind
+import app.pictext.core.model.GrayImage
 import app.pictext.core.model.LineRole
 import app.pictext.core.model.PageLayout
 import app.pictext.core.model.PlanMode
@@ -13,6 +21,8 @@ import app.pictext.core.plan.PlanAuditReport
 import app.pictext.core.plan.PlanAuditor
 import app.pictext.core.plan.ReflowOptions
 import app.pictext.core.plan.ReflowPlanner
+import app.pictext.core.plan.SmartReflow
+import app.pictext.core.plan.SmartReflowResult
 import app.pictext.core.util.Grayscale
 import java.awt.BasicStroke
 import java.awt.Color
@@ -30,16 +40,18 @@ import kotlin.math.roundToInt
  * 用法：
  * ```
  * ./gradlew :cli:run --args="in.png out/ --out-width 1080"
+ * ./gradlew :cli:run --args="in.png out/ --out-width 1080 --layout --detections boxes.txt --dump-regions"
+ * ./gradlew :cli:run --args="in.png out/ --out-width 1080 --compare --detections boxes.txt"
  * ./gradlew :cli:run --args="summary out/summary.png a.png b.png c.png"
  * ```
+ *
+ * v2（`--layout`）需要一个检测器。在 ORT 适配器接上之前（docs/07 V2-12 的后半段），
+ * 用 `--detections <file>` 喂已知框：每行 `label score x1 y1 x2 y2`（S 坐标，`#` 注释）。
+ * 这样区域合并、细化、阅读顺序、覆盖审计、规划、审计整条链路都能在没有模型时跑通。
  */
 fun main(args: Array<String>) {
     if (args.isEmpty()) {
-        System.err.println(
-            "usage: pictext-cli <input-image> [out-dir] [--out-width N] [--target-em N] " +
-                "[--latin-split] [--x4] [--dump-lines]",
-        )
-        System.err.println("       pictext-cli summary <out.png> <a.png> <b.png> ...")
+        printUsage()
         return
     }
     if (args[0] == "summary") {
@@ -57,6 +69,14 @@ fun main(args: Array<String>) {
     var latinSplit = false
     var x4 = false
     var dumpLines = false
+    var layoutMode = false
+    var dumpRegions = false
+    var compare = false
+    var detectionsFile: File? = null
+    var modelFile: File? = null
+    var minCoverage: Float? = null
+    var residualFail: Float? = null
+    var scoreThreshold: Float? = null
     var i = 1
     while (i < args.size) {
         when (args[i]) {
@@ -65,9 +85,26 @@ fun main(args: Array<String>) {
             "--latin-split" -> latinSplit = true
             "--x4" -> x4 = true
             "--dump-lines" -> dumpLines = true
+            "--layout" -> layoutMode = true
+            "--dump-regions" -> dumpRegions = true
+            "--compare" -> compare = true
+            "--detections" -> detectionsFile = args.getOrNull(++i)?.let { File(it) }
+            "--model" -> modelFile = args.getOrNull(++i)?.let { File(it) }
+            // 调参用：V2-13 要量“模型到底覆盖了多少墨迹”，这两个旋钮能把回退闸门临时放开。
+            "--min-coverage" -> minCoverage = args.getOrNull(++i)?.toFloatOrNull()
+            "--residual-fail" -> residualFail = args.getOrNull(++i)?.toFloatOrNull()
+            "--score" -> scoreThreshold = args.getOrNull(++i)?.toFloatOrNull()
             else -> if (!args[i].startsWith("--")) outDir = File(args[i])
         }
         i++
+    }
+    if ((layoutMode || compare) && detectionsFile == null && modelFile == null) {
+        System.err.println(
+            "--layout/--compare 需要检测器：--model models/doclayout/PP-DocLayout-S.onnx，" +
+                "或 --detections <file>（无模型时回放已知框）。\n" +
+                "detections 格式：每行 `label score x1 y1 x2 y2`，S 坐标，# 开头是注释。",
+        )
+        return
     }
     outDir.mkdirs()
 
@@ -105,9 +142,6 @@ fun main(args: Array<String>) {
     val gray = Grayscale.fromArgb(aw, ah, analysisPixels, bgArgb)
 
     val analysisOptions = AnalysisOptions(latinSplitEnabled = latinSplit)
-    val t0 = System.nanoTime()
-    val layout = LayoutAnalyzer(analysisOptions).analyze(gray, w, h)
-    val t1 = System.nanoTime()
     val planOptions = if (x4) {
         ReflowOptions(
             outputWidth = outWidth,
@@ -119,16 +153,79 @@ fun main(args: Array<String>) {
     } else {
         ReflowOptions(outputWidth = outWidth, targetEm = targetEm)
     }
-    val plan = ReflowPlanner().plan(layout, planOptions)
-    val t2 = System.nanoTime()
-    val audit = PlanAuditor.audit(layout, plan)
+
+    val t0 = System.nanoTime()
+    val v2: SmartReflowResult?
+    val layout: PageLayout
+    val plan: ReflowPlan
+    val audit: PlanAuditReport
+    if (layoutMode || compare) {
+        val detector: LayoutDetector = if (modelFile != null) {
+            DesktopLayoutDetector(modelFile!!).also {
+                println("model ${modelFile!!.path} ${it.describe()}")
+            }
+        } else {
+            val (boxes, errors) = parseDetections(detectionsFile!!)
+            for (e in errors) System.err.println("detections: $e")
+            if (boxes.isEmpty()) System.err.println("detections: no usable boxes in ${detectionsFile!!.path}")
+            ScriptedLayoutDetector(ModelContract().modelInput, boxes)
+        }
+        try {
+            v2 = runV2(
+                rgb = rgb,
+                analysis = gray,
+                bgArgb = bgArgb,
+                w = w,
+                h = h,
+                planOptions = planOptions,
+                analysisOptions = analysisOptions,
+                detector = detector,
+                dumpLines = dumpLines,
+                layoutOptions = LayoutOptions(
+                    minCoverage = minCoverage ?: LayoutOptions().minCoverage,
+                    residualFailRatio = residualFail ?: LayoutOptions().residualFailRatio,
+                    scoreThreshold = scoreThreshold ?: LayoutOptions().scoreThreshold,
+                ),
+            )
+            layout = v2.layout
+            plan = v2.plan
+            audit = v2.projectionAudit
+        } finally {
+            detector.close()
+        }
+    } else {
+        v2 = null
+        layout = LayoutAnalyzer(analysisOptions).analyze(gray, w, h)
+        plan = ReflowPlanner().plan(layout, planOptions)
+        audit = PlanAuditor.audit(layout, plan)
+    }
+    val t1 = System.nanoTime()
+
     if (dumpLines) {
         for ((index, line) in layout.textLines().withIndex()) {
             println(
                 "line[$index] role=${line.role} band=${line.band} cutX=${line.cutX} " +
-                    "split=${line.split} centered=${line.centered} cuts=${line.cuts}",
+                    "split=${line.split} centered=${line.centered} cuts=${line.cuts} " +
+                    "sensitive=${line.sensitive}",
             )
         }
+    }
+
+    // --compare：同图再跑一次 v1（或 v2），两张 after 并排看差异。
+    if (compare) {
+        val v1Layout = LayoutAnalyzer(analysisOptions).analyze(gray, w, h)
+        val v1Plan = ReflowPlanner().plan(v1Layout, planOptions)
+        writeAfter(File(outDir, "after-v1.png"), rgb, v1Layout, v1Plan)
+        writeAfter(File(outDir, "after-v2.png"), rgb, layout, plan)
+        File(outDir, "stats.json").writeText(
+            "{\n" +
+                "  \"v1\": {\"mode\":\"${v1Plan.mode}\",\"lines\":${v1Layout.textLines().size}," +
+                "\"scale\":${"%.3f".format(v1Plan.scale)},\"height\":${v1Plan.height}},\n" +
+                "  \"v2\": {\"mode\":\"${plan.mode}\",\"lines\":${layout.regionLines().size}," +
+                "\"scale\":${"%.3f".format(plan.bodyScale)},\"height\":${plan.height}},\n" +
+                "  \"fallback\": \"${v2?.fallbackCode ?: "none"}\"\n}\n",
+        )
+        println("compare v1(mode=${v1Plan.mode} h=${v1Plan.height}) vs v2(mode=${plan.mode} h=${plan.height})")
     }
 
     if (plan.mode == PlanMode.ORIGINAL) {
@@ -136,7 +233,15 @@ fun main(args: Array<String>) {
     } else {
         ImageIO.write(render(rgb, layout, plan), "png", File(outDir, "after.png"))
     }
-    ImageIO.write(debugOverlay(rgb, layout), "png", File(outDir, "debug.png"))
+    val debug = if (v2 != null && v2.layoutAudit != null) {
+        v2DebugOverlay(rgb, layout)
+    } else {
+        debugOverlay(rgb, layout)
+    }
+    ImageIO.write(debug, "png", File(outDir, "debug.png"))
+    if (dumpRegions && v2 != null) {
+        File(outDir, "regions.json").writeText(regionsJson(v2, v2.layoutStats?.summary))
+    }
     File(outDir, "plan.json").writeText(
         planJson(
             name = input.name,
@@ -149,7 +254,8 @@ fun main(args: Array<String>) {
             options = planOptions,
             analysisOptions = analysisOptions,
             analyzeNanos = t1 - t0,
-            planNanos = t2 - t1,
+            planNanos = t1 - t0,
+            v2 = v2,
         ),
     )
 
@@ -158,9 +264,103 @@ fun main(args: Array<String>) {
             "figures=${layout.blocks.count { it is Block.Figure }} cut=${layout.splitX} " +
             "scale=${"%.3f".format(plan.scale)} items=${plan.items.size} " +
             "output=${plan.outputWidth}x${plan.height} " +
-            "analyze=${(t1 - t0) / 1_000_000}ms plan=${(t2 - t1) / 1_000_000}ms",
+            "analyze=${(t1 - t0) / 1_000_000}ms",
     )
+    if (v2 != null) {
+        println(summaryLine(v2))
+        if (v2.fallbackCode != null) println("v2 notes: ${v2.plan.notes.joinToString(" | ")}")
+    }
     println("audit ${audit.summary()}")
+    v2?.layoutAudit?.let { println("auditV2 ${it.summary()}") }
+}
+
+private fun printUsage() {
+    System.err.println(
+        "usage: pictext-cli <input-image> [out-dir] [--out-width N] [--target-em N] " +
+            "[--latin-split] [--x4] [--dump-lines] [--layout] [--compare] " +
+            "[--detections FILE] [--dump-regions]",
+    )
+    System.err.println("       pictext-cli summary <out.png> <a.png> <b.png> ...")
+}
+
+/** 跑 v2 链路：全分辨率灰度只解一次，tile/ROI 都从它采样（桌面内存换简洁）。 */
+private fun runV2(
+    rgb: BufferedImage,
+    analysis: GrayImage,
+    bgArgb: Int,
+    w: Int,
+    h: Int,
+    planOptions: ReflowOptions,
+    analysisOptions: AnalysisOptions,
+    detector: LayoutDetector,
+    dumpLines: Boolean,
+    layoutOptions: LayoutOptions = LayoutOptions(),
+): SmartReflowResult {
+    val pageGray = grayFromImage(rgb, bgArgb)
+    val page = PageContext(
+        srcWidth = w,
+        srcHeight = h,
+        backgroundColor = bgArgb,
+        isDark = luminance(bgArgb) < 110,
+    )
+    val result = SmartReflow(analysisOptions = analysisOptions, layoutOptions = layoutOptions).run(
+        analysis = analysis,
+        page = page,
+        planOptions = planOptions,
+        sampler = GrayPageTileSampler(pageGray),
+        regionSampler = GrayPageRegionSampler(pageGray),
+        detector = detector,
+        onTile = { done, total -> if (dumpLines) println("tile $done/$total") },
+    )
+    (result.v2Outcome as? LayoutOutcome.Fallback)?.let {
+        println(
+            "v2 ${it.code} tiles=${it.tiles} dets=${it.detections} regions=${it.regions} " +
+                "coverage=${"%.4f".format(it.coverage)}",
+        )
+        for (tc in it.tilesReport) {
+            println(
+                "  tile#${tc.tileIndex} ink=${tc.ink} covered=${tc.covered} " +
+                    "ratio=${"%.4f".format(tc.ratio)} residual=${tc.residuals.size} " +
+                    "boxes=${tc.residuals.take(3).joinToString(" ") { r -> "${r.bounds}:${r.ink}" }}",
+            )
+        }
+    }
+    return result
+}
+
+/** 逐行转换，避免为 1080×20000 的长图再分配一份 86MB 的 IntArray。 */
+private fun grayFromImage(img: BufferedImage, backgroundColor: Int): GrayImage {
+    val w = img.width
+    val h = img.height
+    val data = ByteArray(w * h)
+    val row = IntArray(w)
+    for (y in 0 until h) {
+        img.getRGB(0, y, w, 1, row, 0, w)
+        val base = y * w
+        for (x in 0 until w) {
+            val c = row[x]
+            val r = (c ushr 16) and 0xFF
+            val g = (c ushr 8) and 0xFF
+            val b = c and 0xFF
+            data[base + x] = ((77 * r + 150 * g + 29 * b) shr 8).toByte()
+        }
+    }
+    return GrayImage(w, h, data, backgroundColor)
+}
+
+private fun luminance(argb: Int): Int {
+    val r = (argb ushr 16) and 0xFF
+    val g = (argb ushr 8) and 0xFF
+    val b = argb and 0xFF
+    return (77 * r + 150 * g + 29 * b) shr 8
+}
+
+private fun writeAfter(file: File, source: BufferedImage, layout: PageLayout, plan: ReflowPlan) {
+    if (plan.mode == PlanMode.ORIGINAL) {
+        ImageIO.write(source, "png", file)
+    } else {
+        ImageIO.write(render(source, layout, plan), "png", file)
+    }
 }
 
 /** 把若干张 after.png 横向拼成一张复核图（脚本用）。 */
@@ -330,6 +530,7 @@ private fun planJson(
     analysisOptions: AnalysisOptions,
     analyzeNanos: Long,
     planNanos: Long,
+    v2: SmartReflowResult?,
 ): String {
     val sb = StringBuilder()
     fun line(body: String, last: Boolean = false) {
@@ -356,18 +557,25 @@ private fun planJson(
     line("\"height\": ${plan.height}")
     line("\"outputWidth\": ${plan.outputWidth}")
     line("\"textEm\": ${options.targetEm}")
-    line("\"options\": {\"outputWidth\": ${options.outputWidth}, \"targetEm\": ${options.targetEm}, " +
-        "\"minGain\": ${options.minGain}, \"maxScale\": ${options.maxScale}, " +
-        "\"splitEnabled\": ${options.splitEnabled}, \"uiMaxScale\": ${options.uiMaxScale}, " +
-        "\"latinSplit\": ${analysisOptions.latinSplitEnabled}}")
+    line(
+        "\"options\": {\"outputWidth\": ${options.outputWidth}, \"targetEm\": ${options.targetEm}, " +
+            "\"minGain\": ${options.minGain}, \"maxScale\": ${options.maxScale}, " +
+            "\"splitEnabled\": ${options.splitEnabled}, \"uiMaxScale\": ${options.uiMaxScale}, " +
+            "\"latinSplit\": ${analysisOptions.latinSplitEnabled}}",
+    )
     line("\"blockCounts\": ${jsonMap(layout.blocks.groupingBy { blockKind(it) }.eachCount())}")
     line("\"figureReasons\": ${jsonMap(layout.figureKindCounts().mapKeys { it.key.name })}")
     line("\"roles\": ${jsonMap(layout.roleCounts().mapKeys { it.key.name })}")
-    line("\"audit\": {\"ok\": ${audit.ok}, \"bodyScaleDeviation\": ${"%.3f".format(audit.bodyScaleDeviation)}, " +
-        "\"uiMaxScale\": ${"%.2f".format(audit.uiMaxScale)}, " +
-        "\"headingHeightRatio\": ${"%.2f".format(audit.headingHeightRatio)}, " +
-        "\"itemsOutOfBounds\": ${audit.itemsOutOfBounds}, \"nonMonotonic\": ${audit.nonMonotonic}, " +
-        "\"issues\": [${audit.issues.joinToString(", ") { "\"" + it.replace("\"", "\\\"") + "\"" }}]}")
+    line(
+        "\"audit\": {\"ok\": ${audit.ok}, \"bodyScaleDeviation\": ${"%.3f".format(audit.bodyScaleDeviation)}, " +
+            "\"uiMaxScale\": ${"%.2f".format(audit.uiMaxScale)}, " +
+            "\"headingHeightRatio\": ${"%.2f".format(audit.headingHeightRatio)}, " +
+            "\"itemsOutOfBounds\": ${audit.itemsOutOfBounds}, \"nonMonotonic\": ${audit.nonMonotonic}, " +
+            "\"issues\": [${audit.issues.joinToString(", ") { "\"" + it.replace("\"", "\\\"") + "\"" }}]}",
+    )
+    if (v2 != null) {
+        sb.append("  ").append(layoutSummaryJson(v2).trimEnd('\n').replace("\n", "\n  ")).append('\n')
+    }
     line("\"analyzeMs\": ${"%.1f".format(analyzeNanos / 1_000_000.0)}")
     line("\"planMs\": ${"%.1f".format(planNanos / 1_000_000.0)}")
     sb.append("  \"itemsDetail\": [\n")
@@ -382,6 +590,10 @@ private fun planJson(
         }
         val scale = if (item.src.width > 0) item.dest.width.toFloat() / item.src.width else 1f
         sb.append("    {\"kind\":\"$kind\",\"role\":\"$role\",\"scale\":${"%.3f".format(scale)},")
+        if (item is RenderItem.TextRow) {
+            sb.append("\"region\":${item.regionIndex},\"seg\":${item.segmentIndex}/")
+            sb.append("${item.segments},\"cut\":\"${item.cut}\",")
+        }
         sb.append("\"src\":[${item.src.left},${item.src.top},${item.src.right},${item.src.bottom}],")
         sb.append("\"dest\":[${item.dest.left},${item.dest.top},${item.dest.right},${item.dest.bottom}]}")
         if (i != plan.items.lastIndex) sb.append(",")

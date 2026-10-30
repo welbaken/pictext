@@ -1,0 +1,158 @@
+{
+  "schema": 1,
+  "model": "PP-DocLayout-S",
+  "purpose": "版面区域检测（只回答“这是什么区域、大致在哪”，不回答阅读顺序、不回答行切点）",
+  "source": {
+    "hub": "https://huggingface.co/PaddlePaddle/PP-DocLayout-S",
+    "docs": "https://www.paddleocr.ai/main/version3.x/module_usage/layout_detection.html",
+    "downloadedAt": "2026-10-30",
+    "artifactForm": "Paddle Inference 3.0（inference.json + inference.pdiparams，非 ONNX）"
+  },
+  "license": {
+    "id": "Apache-2.0",
+    "evidence": "MODEL_CARD.md 的 YAML 头 `license: apache-2.0`；LICENSE.txt 为 Apache-2.0 原文",
+    "note": "随 APK 分发需在 NOTICE 记录模型名、来源、版本、SHA-256"
+  },
+  "metrics": {
+    "mAP50": 70.9,
+    "evalSet": "自建 500 张文档类图像（中英文论文、报刊、合同、书本、试卷、研报），不含手机截图",
+    "caution": "70.9 不能当作手机截图上的精度预期；截图必须实测（docs/07 §2.7、V2-13）"
+  },
+  "classes": 23,
+  "labels": [
+    "paragraph_title",
+    "image",
+    "text",
+    "number",
+    "abstract",
+    "content",
+    "figure_title",
+    "formula",
+    "table",
+    "table_title",
+    "reference",
+    "doc_title",
+    "footnote",
+    "header",
+    "algorithm",
+    "footer",
+    "seal",
+    "chart_title",
+    "chart",
+    "formula_number",
+    "header_image",
+    "footer_image",
+    "aside_text"
+  ],
+  "labelSource": "config.json / inference.yml 的 label_list（顺序即类别 id），不是文档表格",
+  "arch": {
+    "name": "GFL (PicoDet-S 主干)",
+    "fpnStride": [8, 16, 32, 64],
+    "useDynamicShape": false
+  },
+  "input": {
+    "image": {
+      "name": "image",
+      "shape": [1, 3, 480, 480],
+      "layout": "NCHW",
+      "dtype": "float32",
+      "source": "inference.yml Preprocess.target_size + Hpi.paddle_infer.trt_dynamic_shapes"
+    },
+    "scale_factor": {
+      "name": "scale_factor",
+      "shape": [1, 2],
+      "dtype": "float32",
+      "source": "inference.yml Hpi.paddle_infer.trt_dynamic_shapes.scale_factor",
+      "note": "ONNX 保留了这个输入（少喂会报 missing input）；产品恒喂 [1.0, 1.0]，输出坐标就留在 480 空间，映射由 LayoutTiler/Tile 负责"
+    }
+  },
+  "preprocess": {
+    "resize": "stretch",
+    "keepRatio": false,
+    "targetSize": [480, 480],
+    "interpolation": "bilinear (interp: 2)",
+    "isScale": true,
+    "mean": [0.485, 0.456, 0.406],
+    "std": [0.229, 0.224, 0.225],
+    "permute": "HWC → CHW",
+    "formula": "(v / 255 - mean) / std",
+    "source": "inference.yml Preprocess（已逐字段核对）"
+  },
+  "postprocess": {
+    "nms": {
+      "type": "MultiClassNMS",
+      "scoreThreshold": 0.3,
+      "nmsThreshold": 0.5,
+      "keepTopK": 100,
+      "nmsTopK": 1000,
+      "drawThreshold": 0.5,
+      "source": "inference.yml NMS（已核对）"
+    },
+    "appThreshold": 0.4,
+    "appNmsIou": 0.5,
+    "appNote": "产品阈值比官方 score_threshold 略高，用来压掉手机截图上的低分误检；见 core/layout/LayoutOptions.kt",
+    "onnxInGraph": {
+      "note": "ONNX 图内已经做过一次 NMS，但阈值极低（score 0.025 / iou 0.6 / keep_top_k 100），不能当作产品后处理",
+      "scoreThreshold": 0.025,
+      "nmsThreshold": 0.6,
+      "keepTopK": 100,
+      "clientMustReFilter": true,
+      "source": "models/doclayout/CONVERSION.md §5.3"
+    }
+  },
+  "files": {
+    "config.json": { "bytes": 4715, "sha256": "45f5757daf01694c4adba0eba7ff2854caf011f02c91bdbd2ef6eb06d7a0f488" },
+    "inference.json": { "bytes": 339876, "sha256": "ac09e931895d4c442e5379ab3b7e9b583baf288e816ab7675ca519da9eb2a9d7" },
+    "inference.pdiparams": { "bytes": 4804904, "sha256": "491c3382d84ca04d2033afbee0c105942ed82fea392bb4a19170646adebe088a" },
+    "inference.yml": { "bytes": 1579, "sha256": "6f690098c438214c67822239a568f0bc2bbe97a8f02fba93e492d4f2c47523c3" },
+    "MODEL_CARD.md": { "bytes": 7298, "sha256": "d8d4f20e0d2c2e091f87adbf62b99ccbcd5230ef2239ee09dfc3056b0e0999f2" }
+  },
+  "onnxExport": {
+    "status": "verified",
+    "tool": "Paddle2ONNX",
+    "toolVersion": "2.1.0",
+    "converterRequires": "paddlepaddle==3.1.1（CPU，仅转换时用；产品路径不依赖 paddle）",
+    "opset": 13,
+    "irVersion": 7,
+    "artifact": "models/doclayout/PP-DocLayout-S.onnx",
+    "bytes": 4914725,
+    "sha256": "3cfcad683909820eab27caceab7a4f9ec368fc3e055853b609d9fd1c55b162e9",
+    "verified": true,
+    "verifiedBy": "tools/compare_paddle_onnx.py（官方 Paddle 3.1.1 vs ONNX）",
+    "maxBoxDeltaPx": 0.01,
+    "tolerancePx": 2.0,
+    "record": "models/doclayout/CONVERSION.md"
+  },
+  "onnxSignature": {
+    "inputs": {
+      "image": { "shape": [1, 3, 480, 480], "dtype": "float32", "note": "batch 固定 1，480 写死（锚点 4789 = 60²+30²+15²+8²）" },
+      "scale_factor": {
+        "shape": [1, 2],
+        "dtype": "float32",
+        "note": "实测语义 out = box_480 / scale_factor；产品恒喂 [1,1]，输出就留在 480 空间",
+        "uncertainty": "官方喂的是 net/origin 还是 origin/net、[h,w] 还是 [w,h] 未逐行核对；恒喂 [1,1] 可完全规避"
+      }
+    },
+    "outputs": {
+      "fetch_name_0": {
+        "shape": ["N", 6],
+        "dtype": "float32",
+        "fields": ["class_id", "score", "x1", "y1", "x2", "y2"],
+        "note": "N 动态（白图 N=7，截图可顶到 keep_top_k=100），按第 0 维实际长度解析，不要假设 100",
+        "coordinates": "0–480 像素，非归一化，且不裁剪（会出现 x2>480），客户端必须 clamp",
+        "nmsBuiltIn": true
+      },
+      "fetch_name_1": { "shape": [1], "dtype": "int32", "note": "= N，可作交叉校验" }
+    }
+  },
+  "unverified": [
+    "scale_factor 的官方语义（已用恒喂 [1,1] 规避，不影响产品）",
+    "arm64 手机端的单 tile 延迟（20.8ms 是 x86 开发机数字，不能当预算）"
+  ],
+  "consumers": {
+    "core": "core/src/main/kotlin/app/pictext/core/layout/ModelContract.kt（默认值与本文件一致，可被 app/cli 覆盖）",
+    "app": "app 侧 ORT 适配器（待实现，见 docs/07 V2-32）",
+    "cli": "cli 侧桌面 ORT 适配器（待实现，见 docs/07 V2-12）",
+    "reference": "tools/doclayout_reference.py"
+  }
+}

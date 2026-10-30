@@ -1,8 +1,10 @@
 package app.pictext.core.plan
 
+import app.pictext.core.layout.LayoutSummaryStats
 import app.pictext.core.model.Block
 import app.pictext.core.model.FallbackReason
 import app.pictext.core.model.FigureKind
+import app.pictext.core.model.LayoutStrategy
 import app.pictext.core.model.LineRole
 import app.pictext.core.model.PageLayout
 import app.pictext.core.model.PlanMode
@@ -36,12 +38,24 @@ import kotlin.math.roundToInt
  */
 class ReflowPlanner {
 
-    fun plan(layout: PageLayout, options: ReflowOptions): ReflowPlan {
+    /**
+     * @param layoutStats v2 管线的统计（tile 数/覆盖率/残差等）。v1 调用方传 `null`；
+     *   v2 下这些数字会进 `ReflowPlan.layout`，供 CLI 与审计读取。
+     */
+    fun plan(
+        layout: PageLayout,
+        options: ReflowOptions,
+        layoutStats: LayoutSummaryStats? = null,
+    ): ReflowPlan {
         val outW = options.outputWidth.coerceAtLeast(1)
         val inset = max(10, (options.insetRatio * outW).roundToInt())
         val contentW = max(1, outW - 2 * inset)
 
         val notes = layout.diagnostics.notes.toMutableList()
+        // v2（模型区域 + 阅读顺序）走独立分支：v1 的“全页投影 + 左右对半”一行都不动。
+        if (layout.strategy == LayoutStrategy.DOC_LAYOUT) {
+            return ReflowPlannerV2().plan(layout, options, outW, inset, contentW, notes, layoutStats)
+        }
         // 用户明确按了“×2/×4”时只保留“根本没字/没墨”这类硬回退，
         // 长行不足、收益不足、多栏这些前置判断一律不看（他要的是放大，不是建议）。
         val early = earlyFallback(layout, relaxed = options.forceReflow)
