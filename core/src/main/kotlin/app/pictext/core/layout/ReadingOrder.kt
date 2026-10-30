@@ -7,10 +7,13 @@ import kotlin.math.roundToInt
 /**
  * 递归 XY-cut 阅读顺序（docs/07 §4.7.1）。
  *
- * 判定顺序固定为“先横带、后竖列”：
- * 1. 沿 y 轴投影，若存在贯穿整页宽度的空白带（高度 ≥ `minGapY`），按 top 升序逐带递归；
- * 2. 否则沿 x 轴投影，若存在贯穿整页高度的空白列（宽度 ≥ `minGapX`），按 left 升序逐列递归；
+ * 每一步都同时求两个方向的“贯通空白”，**选断口更显著的那个轴**（见 [gapSignificance]）：
+ * 1. 沿 y 轴投影得到横带（高度 ≥ `minGapY`），按 top 升序逐带递归；
+ * 2. 沿 x 轴投影得到竖列（宽度 ≥ `minGapX`），按 left 升序逐列递归；
  * 3. 两个方向都切不开时退回 `(top, left)` 稳定排序，并置 `ambiguous = true`。
+ *
+ * > 这里与 docs/07 §4.7.1 的伪代码有一处**刻意的偏差**：伪代码写“先横带、后竖列”，
+ * > 实测双栏文档会因此排错（见 §13.2 第 14 条）。断口显著性比较能把“分栏”和“分段”区分开。
  *
  * ## 为什么断口必须“整条贯通”
  * 断口不是“某两个相邻框之间够远”，而是**一条横线（竖线）穿过整页时不碰到任何框**。
@@ -72,12 +75,52 @@ class ReadingOrder(private val options: LayoutOptions = LayoutOptions()) {
         }
 
         val bands = splitByFullWidthGaps(regions, minGapY)
-        if (bands.size > 1) return concatInOrder(bands, depth, minGapX, minGapY)
-
         val columns = splitByFullHeightGaps(regions, minGapX)
-        if (columns.size > 1) return concatInOrder(columns, depth, minGapX, minGapY)
+        val canBands = bands.size > 1
+        val canCols = columns.size > 1
+
+        // 两个方向都能切时，**选断口更显著的那个轴**，而不是无条件先横带。
+        //
+        // 为什么：双栏文档的左右栏各自有自己的段间距，很容易在某个 y 上“两栏同时留白”，
+        // 于是横带断口成立，页面被切成上下两半，顺序变成“左一段、右一段”交叉
+        // （`11-doc-two-column` 的 GT 就是这么被排坏的）。栏间空白通常比段间距宽得多，
+        // 用“断口宽度 / 该轴跨度”比较两个方向，就能把“分栏”和“分节”区分开。
+        if (canBands && canCols) {
+            val verticalSignificance = gapSignificance(regions, byY = false)
+            val horizontalSignificance = gapSignificance(regions, byY = true)
+            return if (verticalSignificance > horizontalSignificance) {
+                concatInOrder(columns, depth, minGapX, minGapY)
+            } else {
+                concatInOrder(bands, depth, minGapX, minGapY)
+            }
+        }
+        if (canBands) return concatInOrder(bands, depth, minGapX, minGapY)
+        if (canCols) return concatInOrder(columns, depth, minGapX, minGapY)
 
         return OrderResult(topLeftSorted(regions), ambiguous = true)
+    }
+
+    /**
+     * 该轴上最大断口相对跨度的比例。
+     *
+     * 例如双栏页：栏间空白 40px / 页宽 1080 = 0.037；两段文字之间的段间距 20px / 页高 1200 = 0.017，
+     * 于是“分栏”优先于“分节”。单栏页只有横带断口，走不到这里。
+     */
+    private fun gapSignificance(regions: List<LayoutRegion>, byY: Boolean): Float {
+        val spans = emptySpans(regions, byY)
+        if (spans.isEmpty()) return 0f
+        var minStart = Int.MAX_VALUE
+        var maxEnd = Int.MIN_VALUE
+        for (r in regions) {
+            val start = if (byY) r.bounds.top else r.bounds.left
+            val end = if (byY) r.bounds.bottom else r.bounds.right
+            if (start < minStart) minStart = start
+            if (end > maxEnd) maxEnd = end
+        }
+        val extent = (maxEnd - minStart).toFloat()
+        if (extent <= 0f) return 0f
+        val largest = spans.maxOf { it.end - it.start }.toFloat()
+        return largest / extent
     }
 
     /** 依次递归每个分组并拼接；任一子结果有歧义，父结果就带歧义。 */
@@ -110,18 +153,20 @@ class ReadingOrder(private val options: LayoutOptions = LayoutOptions()) {
     ): List<List<LayoutRegion>> = splitByProjection(regions, byY = false, minGap = minGapX)
 
     /**
-     * 沿一个轴做投影扫描线，按“整条贯通”的空白切分。
+     * 沿一个轴做投影扫描线，在**挑出来的那一刀**处一分为二。
      *
-     * 返回值为按轴升序的若干组；没有合格空白时返回只含原列表的单元素列表。
-     * 组内顺序在这里也按轴升序（同轴坐标按起点、终点排序），递归会在此基础上继续切。
+     * 为什么只切一刀、而不是把所有空白都切成多组：一次切光会把“双栏正文”按每一段的段间距
+     * 切成十几条横带，顺序直接变成“左一段、右一段”（`11-doc-two-column` 实测就是这么坏的）。
+     * 教科书版 XY-cut 每次只切最显著的那一刀，递归下去自然得到“先分节、再分栏、再分段”。
+     *
+     * 返回按轴升序的两组；找不到合格空白时返回只含原列表的单元素列表。
      */
     private fun splitByProjection(
         regions: List<LayoutRegion>,
         byY: Boolean,
         minGap: Int,
     ): List<List<LayoutRegion>> {
-        val gaps = emptySpans(regions, byY).filter { it.end - it.start >= minGap }
-        if (gaps.isEmpty()) return listOf(regions)
+        val gap = chooseGap(regions, byY, minGap) ?: return listOf(regions)
 
         val ordered = regions.sortedWith(
             compareBy<LayoutRegion>(
@@ -129,16 +174,59 @@ class ReadingOrder(private val options: LayoutOptions = LayoutOptions()) {
                 { if (byY) it.bounds.bottom else it.bounds.right },
             ),
         )
-        // 空白区间互不相交：某区域的起点落在第几个断口之后，就属于第几组。
-        // （断口内没有任何框覆盖，所以每个框必然完整落在一侧，不会跨组。）
-        val groups = ArrayList<MutableList<LayoutRegion>>(gaps.size + 1)
+        val before = ArrayList<LayoutRegion>(ordered.size)
+        val after = ArrayList<LayoutRegion>(ordered.size)
         for (region in ordered) {
             val start = if (byY) region.bounds.top else region.bounds.left
-            val index = gaps.count { it.end <= start }
-            while (groups.size <= index) groups.add(ArrayList())
-            groups[index].add(region)
+            if (start < gap.end) before.add(region) else after.add(region)
         }
-        return groups
+        return when {
+            before.isEmpty() || after.isEmpty() -> listOf(regions)
+            else -> listOf(before, after)
+        }
+    }
+
+    /**
+     * 挑一刀：**优先切在“通栏块”的边界上**，其次取最宽的空白。
+     *
+     * 为什么不是简单地取最宽：`03-news-columns` 的正文栏里有 22px 的段间距，而正文栏与右栏
+     * 之间只有 9px 的“图与正文”边界——如果取最宽，就会先从正文栏中间劈开，把右栏内容
+     * 插到正文中间。通栏块（图片、表格、页脚）的上/下边界才是真正的“分节线”：
+     * 切掉它之后，剩下的区域才会露出贯穿的栏间空白，下一轮就能正确分栏。
+     */
+    private fun chooseGap(regions: List<LayoutRegion>, byY: Boolean, minGap: Int): Span? {
+        val gaps = emptySpans(regions, byY).filter { it.end - it.start >= minGap }
+        if (gaps.isEmpty()) return null
+        // 通栏判定：沿另一个轴的跨度是否覆盖本节点的 80% 以上。
+        val crossMin = regions.minOf { if (byY) it.bounds.left else it.bounds.top }
+        val crossMax = regions.maxOf { if (byY) it.bounds.right else it.bounds.bottom }
+        val crossExtent = (crossMax - crossMin).toFloat().coerceAtLeast(1f)
+        val fullThreshold = 0.8f * crossExtent
+
+        fun isFullBlock(r: LayoutRegion): Boolean {
+            val a = if (byY) r.bounds.left else r.bounds.top
+            val b = if (byY) r.bounds.right else r.bounds.bottom
+            return (b - a) >= fullThreshold
+        }
+
+        var best: Span? = null
+        var bestScore = -1
+        var bestWidth = -1
+        for (g in gaps) {
+            val touchesFullBlock = regions.any { r ->
+                val start = if (byY) r.bounds.top else r.bounds.left
+                val end = if (byY) r.bounds.bottom else r.bounds.right
+                isFullBlock(r) && (end == g.start || start == g.end)
+            }
+            val score = if (touchesFullBlock) 1 else 0
+            val width = g.end - g.start
+            if (score > bestScore || (score == bestScore && width > bestWidth)) {
+                best = g
+                bestScore = score
+                bestWidth = width
+            }
+        }
+        return best
     }
 
     /**

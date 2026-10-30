@@ -1,88 +1,32 @@
 # v2 批量统计
 
-- 生成时间：2026-10-30 18:15
+- 生成时间：2026-10-30 21:46
 - 模型：models/doclayout/PP-DocLayout-S.onnx
-- 图片：42 张（v2 成功 31，回退 v1 6，审计通过 31，顺序歧义 27）
+- 图片：12 张（v2 成功 10，回退 v1 2，审计通过 10，顺序歧义 9）
 
 | 图片 | 链路 | v2 诊断 | 计划回退 | 区域 | 行 | tile | 覆盖 | 歧义 | 审计 | 高度 | 耗时 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 006v119zgy1ii8tu8c5jfj30l10mt4as | DOC_LAYOUT | none | NONE | 11 | 12 | 2 | 1 | true | ok | 1876 | 3017ms |
-| 006v119zgy1iiavd4iffpj30z025sak4 | PROJECTION | layout_audit_failed | WEAK_CUT | 0 | 3 | 0 | 0 | - | - | 0 | 1905ms |
-| 006v119zgy1iiawhxmyyhj30mq0hw0vy | DOC_LAYOUT | none | NONE | 14 | 17 | 1 | 0.9999 | true | ok | 2365 | 2923ms |
-| 006v119zgy1iic1iab5pqj30jt0ez0ye | DOC_LAYOUT | none | NONE | 10 | 17 | 1 | 0.9992 | true | ok | 1940 | 2862ms |
-| 006v119zgy1iicd03gyc2j30j506qwik | DOC_LAYOUT | none | NONE | 7 | 11 | 1 | 0.9999 | true | ok | 1005 | 2714ms |
-| 006v119zgy1iidc0d7u9hj30z025sqfz | DOC_LAYOUT | none | NONE | 20 | 29 | 3 | 0.9999 | true | ok | 4748 | 3237ms |
-| 006v119zgy1iidmtwuzihj30oo0jajvp | DOC_LAYOUT | none | NONE | 7 | 15 | 1 | 0.9997 | false | ok | 1463 | 2746ms |
-| 006v119zgy1iiek2wlzp5j30u019vgqd | DOC_LAYOUT | none | GAIN_TOO_SMALL | 21 | 19 | 2 | 0.9998 | true | ok | 0 | 2624ms |
-| 006v119zgy1iiex780gkjj30u01fv7bb | DOC_LAYOUT | none | GAIN_TOO_SMALL | 14 | 21 | 2 | 0.9995 | false | ok | 0 | 2880ms |
-| 006v119zgy1iifqry1ciaj30z025sk30 | PROJECTION | layout_too_few_regions | TOO_FEW_LONG_LINES | 3 | 18 | 3 | 0 | - | - | 0 | 1637ms |
-| 006v119zgy1iifu1vsy36j30kt0n0na7 | DOC_LAYOUT | none | NONE | 15 | 22 | 2 | 0.9999 | true | ok | 2381 | 2934ms |
-| 006v119zgy1iigvftsz0mj30y60u1al1 | DOC_LAYOUT | none | NONE | 34 | 27 | 1 | 0.9991 | true | ok | 2858 | 2767ms |
-| 006v119zgy1iihqk46zfij30z025swqq | DOC_LAYOUT | none | NONE | 14 | 34 | 3 | 1 | true | ok | 4681 | 3343ms |
-| 006v119zgy1iihw7je1euj30jg0aimyi | DOC_LAYOUT | none | NONE | 8 | 11 | 1 | 0.9992 | true | ok | 1168 | 2555ms |
-| 006v119zgy1iij1qwcuqlj30z00sugsg | DOC_LAYOUT | none | NONE | 6 | 13 | 1 | 1 | true | ok | 1521 | 2770ms |
-| 006v119zgy1iik2r1f4z0j30j67y9npf | DOC_LAYOUT | none | GAIN_TOO_SMALL | 69 | 224 | 17 | 0.9999 | true | ok | 0 | 5287ms |
-| 006v119zgy1iikdtviwztj30p41hcn23 | DOC_LAYOUT | none | NONE | 18 | 22 | 3 | 1 | true | ok | 2853 | 3099ms |
-| 006v119zgy1iiketin8cdj30jf1c21kx | DOC_LAYOUT | none | NONE | 49 | 70 | 3 | 1 | true | ok | 7681 | 3453ms |
-| 008BmKOegy1iifs4jtbapj30zu25oe81 | DOC_LAYOUT | none | GAIN_TOO_SMALL | 17 | 41 | 3 | 1 | true | ok | 0 | 2941ms |
-| 008Kltkhly1ii9wlx18opj30j60w70wh | DOC_LAYOUT | none | NONE | 15 | 31 | 2 | 1 | false | ok | 3446 | 2874ms |
-| 143114idywc94ol8yh698k | decode_failed | - | none | 0 | 0 | 0 | 0 | - | - | 0 | 218ms |
-| 160417kqaa1h3qqs1qzhzt | decode_failed | - | none | 0 | 0 | 0 | 0 | - | - | 0 | 242ms |
-| 194411bfwrss3acdcra8w3 | decode_failed | - | none | 0 | 0 | 0 | 0 | - | - | 0 | 219ms |
-| device-1440x2560 | PROJECTION | layout_too_few_regions | TOO_FEW_LONG_LINES | 2 | 8 | 4 | 0 | - | - | 0 | 2382ms |
-| image (1) | decode_failed | - | none | 0 | 0 | 0 | 0 | - | - | 0 | 224ms |
-| image | decode_failed | - | none | 0 | 0 | 0 | 0 | - | - | 0 | 227ms |
-| Screenshot 2026-10-30 164400 | PROJECTION | layout_audit_failed | WEAK_CUT | 0 | 7 | 0 | 0 | - | - | 0 | 1170ms |
-| Screenshot 2026-10-30 164439 | DOC_LAYOUT | none | NONE | 11 | 11 | 1 | 1 | true | ok | 1845 | 2694ms |
-| Screenshot 2026-10-30 164821 | DOC_LAYOUT | none | NONE | 4 | 7 | 2 | 1 | true | ok | 995 | 2851ms |
-| Screenshot 2026-10-30 164847 | DOC_LAYOUT | none | NONE | 31 | 21 | 3 | 0.9997 | true | ok | 4280 | 3010ms |
-| 01-article-light@1080 | DOC_LAYOUT | none | NONE | 23 | 26 | 2 | 1 | true | ok | 5866 | 3064ms |
-| 02-article-paper@1080 | DOC_LAYOUT | none | NONE | 21 | 19 | 2 | 1 | true | ok | 4129 | 2864ms |
-| 03-news-columns@1080 | DOC_LAYOUT | none | NONE | 31 | 36 | 2 | 1 | true | ok | 6302 | 2983ms |
-| 04-social-feed@1080 | DOC_LAYOUT | none | NONE | 20 | 13 | 2 | 0.9999 | true | ok | 2839 | 2870ms |
-| 05-chat@1080 | DOC_LAYOUT | none | NONE | 28 | 8 | 2 | 0.9997 | true | ok | 3604 | 2863ms |
-| 06-product@1080 | DOC_LAYOUT | none | NONE | 32 | 20 | 2 | 1 | true | ok | 5626 | 3148ms |
-| 07-dashboard@1920 | PROJECTION | layout_too_few_regions | TOO_FEW_LONG_LINES | 2 | 1 | 2 | 0 | - | - | 0 | 1516ms |
-| 08-dark-article@1080 | DOC_LAYOUT | none | NONE | 22 | 19 | 2 | 0.9998 | true | ok | 3206 | 2778ms |
-| 09-poster@1080 | DOC_LAYOUT | none | NONE | 7 | 5 | 2 | 1 | true | ok | 2593 | 2837ms |
-| 10-long-feed@1080 | DOC_LAYOUT | none | NONE | 98 | 26 | 8 | 0.9999 | true | ok | 13821 | 4311ms |
-| 11-doc-two-column@1080 | DOC_LAYOUT | none | NONE | 24 | 44 | 2 | 1 | false | ok | 5279 | 2957ms |
-| 12-tight-sensitive@1080 | PROJECTION | layout_audit_failed | WEAK_CUT | 0 | 17 | 0 | 0 | - | - | 0 | 1393ms |
+| 01-article-light@1080 | DOC_LAYOUT | none | NONE | 23 | 26 | 2 | 1 | true | ok | 5866 | 3662ms |
+| 02-article-paper@1080 | DOC_LAYOUT | none | NONE | 21 | 19 | 2 | 1 | true | ok | 4129 | 3107ms |
+| 03-news-columns@1080 | DOC_LAYOUT | none | NONE | 31 | 36 | 2 | 1 | true | ok | 6302 | 3228ms |
+| 04-social-feed@1080 | DOC_LAYOUT | none | NONE | 20 | 13 | 2 | 0.9999 | true | ok | 2839 | 3073ms |
+| 05-chat@1080 | DOC_LAYOUT | none | NONE | 28 | 8 | 2 | 0.9997 | true | ok | 3604 | 2920ms |
+| 06-product@1080 | DOC_LAYOUT | none | NONE | 32 | 20 | 2 | 1 | true | ok | 5626 | 3418ms |
+| 07-dashboard@1920 | PROJECTION | layout_too_few_regions | TOO_FEW_LONG_LINES | 2 | 1 | 2 | 0 | - | - | 0 | 1543ms |
+| 08-dark-article@1080 | DOC_LAYOUT | none | NONE | 22 | 19 | 2 | 0.9998 | true | ok | 3206 | 2931ms |
+| 09-poster@1080 | DOC_LAYOUT | none | NONE | 7 | 5 | 2 | 1 | true | ok | 2593 | 3125ms |
+| 10-long-feed@1080 | DOC_LAYOUT | none | NONE | 98 | 26 | 8 | 0.9999 | true | ok | 13821 | 4818ms |
+| 11-doc-two-column@1080 | DOC_LAYOUT | none | NONE | 24 | 44 | 2 | 1 | false | ok | 5279 | 3061ms |
+| 12-tight-sensitive@1080 | PROJECTION | layout_audit_failed | WEAK_CUT | 0 | 17 | 0 | 0 | - | - | 0 | 1441ms |
 
 ## v2 诊断码分布
 
-- `none`：31
-- `-`：5
-- `layout_audit_failed`：3
-- `layout_too_few_regions`：3
+- `none`：10
+- `layout_too_few_regions`：1
+- `layout_audit_failed`：1
 
 ## 区域类别分布（regions.json）
 
-- 006v119zgy1ii8tu8c5jfj30l10mt4as：FIGURE:5 CHROME:3 TEXT:3
-- 006v119zgy1iiavd4iffpj30z025sak4：
-- 006v119zgy1iiawhxmyyhj30mq0hw0vy：FIGURE:8 TEXT:6
-- 006v119zgy1iic1iab5pqj30jt0ez0ye：TEXT:7 CHROME:1 FIGURE:1 TITLE:1
-- 006v119zgy1iicd03gyc2j30j506qwik：TEXT:4 FIGURE:3
-- 006v119zgy1iidc0d7u9hj30z025sqfz：TEXT:11 FIGURE:7 TABLE:1 TITLE:1
-- 006v119zgy1iidmtwuzihj30oo0jajvp：TEXT:4 CHROME:2 FIGURE:1
-- 006v119zgy1iiek2wlzp5j30u019vgqd：FIGURE:10 TEXT:8 CHROME:2 TITLE:1
-- 006v119zgy1iiex780gkjj30u01fv7bb：FIGURE:8 TEXT:5 TITLE:1
-- 006v119zgy1iifqry1ciaj30z025sk30：
-- 006v119zgy1iifu1vsy36j30kt0n0na7：TEXT:6 FIGURE:5 CHROME:2 TITLE:2
-- 006v119zgy1iigvftsz0mj30y60u1al1：TEXT:19 FIGURE:11 TITLE:4
-- 006v119zgy1iihqk46zfij30z025swqq：TEXT:8 FIGURE:3 TITLE:3
-- 006v119zgy1iihw7je1euj30jg0aimyi：TEXT:7 FIGURE:1
-- 006v119zgy1iij1qwcuqlj30z00sugsg：TEXT:3 TITLE:2 FIGURE:1
-- 006v119zgy1iik2r1f4z0j30j67y9npf：TEXT:45 FIGURE:17 TITLE:4 CHROME:3
-- 006v119zgy1iikdtviwztj30p41hcn23：TEXT:12 FIGURE:3 CHROME:1 TABLE:1 TITLE:1
-- 006v119zgy1iiketin8cdj30jf1c21kx：TEXT:31 FIGURE:12 CHROME:3 TITLE:3
-- 008BmKOegy1iifs4jtbapj30zu25oe81：TEXT:12 FIGURE:4 CHROME:1
-- 008Kltkhly1ii9wlx18opj30j60w70wh：FIGURE:12 TEXT:2 TITLE:1
-- device-1440x2560：
-- Screenshot 2026-10-30 164400：
-- Screenshot 2026-10-30 164439：TEXT:5 FIGURE:3 CHROME:2 TITLE:1
-- Screenshot 2026-10-30 164821：TEXT:3 TABLE:1
-- Screenshot 2026-10-30 164847：FIGURE:17 TEXT:14
 - 01-article-light@1080：TEXT:9 FIGURE:8 CHROME:3 TITLE:3
 - 02-article-paper@1080：FIGURE:10 TEXT:9 CHROME:1 TITLE:1
 - 03-news-columns@1080：TEXT:14 FIGURE:8 TITLE:4 CHROME:3 TABLE:2

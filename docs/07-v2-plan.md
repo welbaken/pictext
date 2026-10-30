@@ -1622,6 +1622,7 @@ testdata/report-v2.md                  # 批量对比
 | 编排 | `core/plan/SmartReflow.kt`（v2 → v1 → 原图） | `SmartReflowTest`：模型缺失走 v1、v2 失败回退带诊断码、竖排走原图 |
 | V2-12（部分） | `cli/{Main,V2,DesktopLayoutDetector}.kt`：`--layout/--model/--detections/--dump-regions/--compare` | `:cli:run` 对 42 张（29 真实 + 12 夹具 + 1 设备截图）跑通；桌面 ORT 单 tile ≈20.8ms |
 | V2-13（部分） | `scripts/score-v2.ps1`、`testdata/report-v2.{md,csv}`、`testdata/layout/detection-baseline.md` | 37 张可解码图上 **v2 接管 31 张（84%）**、`auditV2` 31/31 通过、覆盖率 0.999+；6 张回退全部有诊断码 |
+| V2-13（真值收尾） | `core/src/test/.../layout/Fixture{Order,Composer,CutPolicy}Test.kt`、`FixtureSupport.kt`、`scripts/score-detection.ps1`、`testdata/report-detection.md` | 顺序 **9/10** 逐块一致；12 张真值版面 **0 次 `LAYOUT_FALLBACK`**；敏感行强制切 **0**；检测面积召回 56.5%、行覆盖 80.5%（**闸门未过，见 §13.6**） |
 | V2-32 | `app/.../layout/{ModelAssets,OrtLayoutDetector,AndroidTileSampler}.kt`、`AppContainer`、`SettingsRepository.smartLayout`（β 开关在顶栏）、`ViewerViewModel` 走 `SmartReflow` | MuMu（Android 15 / 1440×2560 / x86_64）实测：模型从 assets 装到 filesDir、ORT 双输入会话就绪、`strategy=DOC_LAYOUT`、`coverage=1.000`、`auditV2=true`、页面正常重排 |
 
 ### 13.1.1 检测基线摘要（详见 `testdata/layout/detection-baseline.md`）
@@ -1668,6 +1669,15 @@ testdata/report-v2.md                  # 批量对比
     release 因此从 27.67MB 降到 **23.44MB**。加 `-keep class ai.onnxruntime.**` 防 R8 打断 JNI。
 13. **UI 入口**：仓库里还没有设置页，β 开关做成顶栏右侧的“版式β·开/关”按钮
     （改动后立即重跑当前页与下一页的分析）；`AppSettings.smartLayout` 默认仍是 `false`。
+14. **XY-cut 的两处修正**（`ReadingOrder`）：原计划是“先横带、后竖列，一次切光所有空白”。
+    用真值一测就发现它把双栏论文排成“左一段、右一段”（`11-doc-two-column`：栏间距 40px，
+    段间距 11px，横带断口先成立）。改成：
+    ① 每一步只切**最显著的一刀**再递归，而不是把整页一次切成 N 带；
+    ② 挑刀时**优先切在通栏块（图/表/页脚）的边界**上，其次才看宽度。
+    改完顺序从 7/10 提到 9/10；剩下 1 张是文字环绕浮动图，几何不可判定，锁成黄金值。
+15. **检测评分口径**：不做逐框 IoU 匹配。`RegionBuilder` 会刻意合并同列碎片，逐框匹配会把
+    “合并”误算成漏检（实测逐框召回 34.7%，面积召回 56.5%，同一批结果）。改用 8px 网格的
+    面积覆盖 + 行中心覆盖，见 `scripts/score-detection.ps1`。
 
 ### 13.4 Android 实测（MuMu 模拟器，Android 15 / 1440×2560 / x86_64）
 
@@ -1697,9 +1707,29 @@ testdata/report-v2.md                  # 批量对比
 
 ### 13.5 未完成（按优先级）
 
-1. **V2-13 收尾**：`ground-truth/*.json` 的 `box/order` → 区域召回/准确率、严格顺序准确率
-   （不需要模型，纯 Kotlin）。这是判断“模型在手机截图上够不够用”的唯一依据。
-2. **V2-40 性能**：先给 `LayoutPipeline` 加分段计时（tile 解码 / 预处理 / 推理 / 细化 / 审计），
+1. **V2-40 性能**：先给 `LayoutPipeline` 加分段计时（tile 解码 / 预处理 / 推理 / 细化 / 审计），
    再针对最大头优化；目标 1080×2400 ≤350ms、1080×20000 ≤1.5s。
-3. **V2-33 / V2-41**：`--compare` 批量 A/B 报告、真机验收清单（模拟器已连通 `127.0.0.1:16416`）。
-4. **V2-42 量化**：不阻塞 v2.0。
+2. **V2-33 / V2-41**：`--compare` 批量 A/B 报告、真机验收清单（模拟器已连通 `127.0.0.1:16416`）。
+3. **V2-42 量化**：不阻塞 v2.0。
+
+### 13.6 V2-13 闸门结论（2026-10-30）
+
+用 12 张 HTML 真值把“顺序 / 组装 / 切分 / 检测”四层都量了一遍，明细见
+`testdata/layout/detection-baseline.md` §7：
+
+| 闸门 | 目标 | 实测 | 判定 |
+|---|---|---|---|
+| 严格顺序夹具逐块一致 | 10/10 | 9/10（1 张浮动图黄金锁定） | 接近达标 |
+| TEXT 区域召回 | ≥85% | 56.5% | **未达标** |
+| 文字行覆盖 | ≥97% | 80.5% | **未达标** |
+| 敏感行强制切 | 0 | 0 | 达标 |
+| GT 版面可规划率 | 100% | 12/12 | 达标 |
+
+**判断**：排版链路（顺序 → 组装 → 规划 → 审计）可以信任；检测在浅底文章页够用
+（面积召回 72–75%、行覆盖 100%），在**深色模式（30%）、聊天气泡（25%）、海报（35%）** 明显掉。
+按 §2.7 的风险约定，这里**停下来评估，不直接进 M2**，处理顺序建议：
+
+1. 先把**回退闸门**做对：深色/气泡/海报页应当在检测阶段判为“不可信”整体走 v1
+   （这三类页面的共同特征是“文字类面积占比低 + 块类面积大”，`CoverageReport` 已经算出来了）；
+2. 再补**深色反相**预处理（成本极低）；气泡内小字需要小目标检测，成本高，v2.1 再说；
+3. 换模型（PP-DocLayout-M/L 或云侧）留到 v2.1，不为 12 张合成夹具换架构。
