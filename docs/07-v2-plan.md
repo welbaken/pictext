@@ -1749,6 +1749,40 @@ testdata/report-v2.md                  # 批量对比
 2. **V2-33 / V2-41**：`--compare` 批量 A/B 报告、真机验收清单（模拟器已连通 `127.0.0.1:16416`）。
 3. **V2-42 量化**：不阻塞 v2.0。
 
+### 13.6.1 V2-44：打开图片卡在“正在分析版式…”（已修，2026-10-30）
+
+**现象**：模拟器上从相册选图后，界面永远停在 Loading，页面上什么都没有。
+
+**先怀疑了模拟器**（MuMu 的 MediaProvider 确实在刷 `Failed to update quota type`），但证据不支持：
+`cache/inbox` 里文件大小正好是 345354B（完整），线程 dump 里所有 `DefaultDispatcher-worker-*`
+都是 parked（**没有任何协程在跑**），主线程在 Looper 里空转。**不是慢，也不是 IO 卡住，是协程被取消了。**
+
+**根因**（日志时间线，精确到毫秒）：
+
+```text
+23:04:17.198  intake: read done 345354                       ← 拷贝已完成
+23:04:17.227  settings: smartLayout false->true entries=0    ← 30ms 后 DataStore 首帧到达
+```
+
+`ViewerViewModel.init` 里 `settings.settings.collect{}` 把 **DataStore 的第一次发射**（从磁盘读回
+已保存的 β=true）当成了“用户刚切换开关”，于是调用 `reanalyzeAll()` → `cancelAllJobs()`，
+而 `openJob` 就在同一个 job 列表里，于是 `open()` 在 `withContext(IO)` 恢复的那一刻被取消——
+状态永远停在 `Loading`。**只有把 β 打开过的用户会中招**（默认 false 时首帧与默认值相同，不触发）。
+
+**修复**（两层，都在 `ViewerViewModel`）：
+
+1. 设置流首帧只同步、不当变更（`settingsLoaded` 标记），`updateReadySettings()` 照常执行；
+2. `reanalyzeAll()` 在 `entries.isEmpty()` 时直接返回——没有图片就没有“重新分析”，
+   更不能顺带取消正在进行的 `open()`。
+
+**验证**：β=on 下连续两轮冷启动，均正常（`DOC_LAYOUT` 1553ms / 1608ms）；
+β 开关仍能触发重分析（`settings: smartLayout false->true entries=1` → 1284ms 重跑）；
+`:core:test` 全绿。
+
+**顺带加的日志**（`Log.d("PicText", …)`，线上可用 `adb logcat -s PicText:*` 直接看进度）：
+`open: start / copied / entries / ready`、`session[i]: decode …`、`intake: …B`。
+这类“不知道卡在哪一步”的问题，缺的往往就是这几行。
+
 ### 13.7 V2-13 闸门结论（2026-10-30）
 
 用 12 张 HTML 真值把“顺序 / 组装 / 切分 / 检测”四层都量了一遍，明细见

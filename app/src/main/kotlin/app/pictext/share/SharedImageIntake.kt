@@ -1,6 +1,7 @@
 package app.pictext.share
 
 import android.content.Context
+import android.util.Log
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -37,10 +38,12 @@ class SharedImageIntake(private val context: Context) {
                     }
                 }
             } ?: throw IllegalArgumentException("cannot open $uri")
+            Log.d("PicText", "intake: ${target.length()}B mime=$mime")
             if (target.length() <= 0L) throw IllegalArgumentException("empty file")
             val key = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xFF) }
             IntakeResult(target, key)
         } catch (t: Throwable) {
+            Log.d("PicText", "intake: failed $t")
             target.delete()
             throw t
         }
@@ -63,3 +66,5 @@ class SharedImageIntake(private val context: Context) {
         else -> ".img"
     }
 }
+
+

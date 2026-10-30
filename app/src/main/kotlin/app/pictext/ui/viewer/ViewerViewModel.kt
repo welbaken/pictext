@@ -37,6 +37,8 @@ import kotlin.math.roundToInt
 /**
  * 阅读页 ViewModel：接收 URI → 拷贝 → 解码 → 分析 → 规划；设置变化只重新规划。
  */
+private const val TAG = "PicText"
+
 class ViewerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val container = (application as PicTextApp).container
@@ -71,6 +73,9 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     private val scrollRatios = HashMap<Int, Float>()
 
     /** Activity 重建（旋转）时用来避免重复 intake；进程死亡后新 ViewModel 为 false。 */
+    /** 设置流是否已完成第一次发射（首次发射只是读盘，不算用户操作）。 */
+    private var settingsLoaded: Boolean = false
+
     var hasOpened: Boolean = false
         private set
 
@@ -79,7 +84,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             container.settings.settings.collect { newSettings ->
                 val old = settings
                 settings = newSettings
+                // 第一次发射是“从磁盘读回已保存的设置”，不是用户改了什么。当成变更处理的话，
+                // 冷启动后打开图片时会把 in-flight 的 open() 取消掉，界面就永远停在
+                // “正在分析版式…”。这就是 V2-44 卡死的根因（docs/07 §13.8）。
+                if (!settingsLoaded) {
+                    settingsLoaded = true
+                    updateReadySettings()
+                    return@collect
+                }
                 if (old.smartLayout != newSettings.smartLayout) {
+                    Log.d(TAG, "settings: smartLayout ${old.smartLayout}->${newSettings.smartLayout} entries=${entries.size}")
                     // 版式开关改变的是“分析结果”本身，不能只重新规划（docs/07 §4.10）。
                     reanalyzeAll()
                 } else if (old.targetSp != newSettings.targetSp ||
@@ -114,16 +128,19 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         _state.value = ViewerUiState.Loading
 
         openJob = viewModelScope.launch {
+            Log.d(TAG, "open: start uris=${uris.size}")
             container.intake.cleanupOldFiles()
             val results = withContext(Dispatchers.IO) {
                 uris.take(5).map { uri -> runCatching { container.intake.copy(uri) } }
             }
+            Log.d(TAG, "open: copied ok=${results.count { it.isSuccess }}/${results.size}")
             entries = results.map { result ->
                 result.fold(
                     onSuccess = { Entry(it.file, it.key, null) },
                     onFailure = { Entry(null, "", FailureKind.UNREADABLE) },
                 )
             }
+            Log.d(TAG, "open: entries=${entries.size}")
             sessions = MutableList(entries.size) { null }
             pages = entries.mapIndexed { index, entry ->
                 PageState(
@@ -147,6 +164,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 _state.value = ViewerUiState.Failed(FailureKind.UNREADABLE)
                 return@launch
             }
+            Log.d(TAG, "open: ready")
             _state.value = ViewerUiState.Ready(
                 pages = pages.toList(),
                 current = 0,
@@ -155,6 +173,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 settings = settings,
                 viewportWidth = viewportWidth,
             )
+            Log.d(TAG, "open: ensureProcessed(0)")
             ensureProcessed(0)
             if (entries.size > 1) ensureProcessed(1)
         }
@@ -354,13 +373,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     private fun createSession(index: Int, entry: Entry): DocumentSession {
         val file = entry.file ?: throw DecodeException(FailureKind.UNREADABLE, "no file")
         val started = System.nanoTime()
+        Log.d(TAG, "session[$index]: decode start")
         val decoded = BitmapDecoder.decodeForAnalysis(file)
+        Log.d(TAG, "session[$index]: decode ok ${decoded.srcWidth}x${decoded.srcHeight}")
         val source = SourceImage(file)
         val opts = options()
 
         // v2：模型区域 + 阅读顺序；模型不可用 / 审计失败 / 竖排都会自动回退到 v1，
         // 回退是无感的（docs/07 §4.9），所以这里不需要 try/catch 兜底模型异常。
         val detector = if (settings.smartLayout) container.layoutDetector() else null
+        Log.d(TAG, "session[$index]: detector=${detector != null}")
         val sampler = if (detector != null) AndroidTileSampler(source) else null
         val bg = decoded.gray.backgroundColor
         // 采样器持有“整页缓存位图”（V2-40：PNG 的 decodeRegion 每次都要从头解码，24 次细化
@@ -459,6 +481,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
      * 只重跑当前页与预取页：用户翻到别的页时 [ensureProcessed] 会补上。
      */
     private fun reanalyzeAll() {
+        // 还没有任何图片时什么都不用重分析。更要紧的是：这里会 `cancelAllJobs()`，
+        // 而 `open()` 也在同一个 job 列表里——早期版本会在“刚打开图片、正在拷文件”时
+        // 被设置项变更连坐取消，界面永远停在 Loading（V2-44）。
+        if (entries.isEmpty()) return
         cancelAllJobs()
         closeSessions()
         sessions = MutableList(entries.size) { null }
@@ -551,3 +577,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun modeOf(index: Int): PlanMode = pages.getOrNull(index)?.mode ?: PlanMode.ORIGINAL
 }
+
+
+
+
+
