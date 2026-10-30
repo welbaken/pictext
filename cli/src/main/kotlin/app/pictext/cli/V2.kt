@@ -247,10 +247,13 @@ fun summaryLine(result: SmartReflowResult): String {
     val audit = result.layoutAudit
     val base = "strategy=${result.layout.strategy} v2fallback=${result.fallbackCode ?: "none"} " +
         "regions=${result.layout.regions.size} lines=${result.layout.regionLines().size} " +
-        "scale=${"%.2f".format(result.plan.bodyScale)} mode=${result.plan.mode}"
+        "scale=${"%.2f".format(result.plan.bodyScale)} mode=${result.plan.mode} " +
+        "lineH=${"%.1f".format(result.layout.medianLineHeight)} " +
+        "effPx=${"%.1f".format(result.plan.bodyScale * result.layout.medianLineHeight)}"
     val extra = if (s != null) {
         " tiles=${s.tiles} dets=${s.detections} residuals=${s.residuals} " +
             "coverage=${"%.4f".format(s.coverage)} ambiguous=${s.orderAmbiguous} " +
+            (if (s.inverted) "invert=1 " else "") +
             "textArea=${"%.3f".format(s.textAreaRatio)} inkInText=${"%.3f".format(s.inkInTextRatio)} " +
             "blockLines=${"%.3f".format(s.blockLineRatio)} emptyText=${"%.3f".format(s.emptyTextRegionRatio)}"
     } else {
@@ -259,4 +262,6 @@ fun summaryLine(result: SmartReflowResult): String {
     val ok = audit?.let { " auditV2=${if (it.ok) "ok" else "FAIL(${it.issues})"}" } ?: ""
     return base + extra + ok
 }
+
+
 

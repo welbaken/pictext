@@ -262,7 +262,8 @@ fun main(args: Array<String>) {
     println(
         "mode=${plan.mode} fallback=${plan.fallback} lines=${layout.textLines().size} " +
             "figures=${layout.blocks.count { it is Block.Figure }} cut=${layout.splitX} " +
-            "scale=${"%.3f".format(plan.scale)} items=${plan.items.size} " +
+            "scale=${"%.3f".format(plan.scale)} lineH=${"%.1f".format(layout.medianLineHeight)} " +
+            "effPx=${"%.1f".format(plan.scale * layout.medianLineHeight)} items=${plan.items.size} " +
             "output=${plan.outputWidth}x${plan.height} " +
             "analyze=${(t1 - t0) / 1_000_000}ms",
     )
@@ -613,3 +614,4 @@ private fun blockKind(block: Block): String = when (block) {
 
 private fun jsonMap(map: Map<*, Int>): String =
     map.entries.joinToString(", ", "{", "}") { "\"${it.key}\": ${it.value}" }
+

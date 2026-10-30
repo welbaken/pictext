@@ -26,6 +26,9 @@ class LayoutPreprocessor(
      * @param out 复用的输入缓冲，尺寸必须是 `contract.modelInput` 见方。
      * @param grayOut 可选：同时产出模型尺寸的灰度（`modelInput²`），供覆盖审计用。
      *   和彩色输入走同一套双线性采样，保证“审计看到的墨迹”就是“模型看到的像素”。
+     *   **不受 [invert] 影响**：审计要的是页面真实的墨迹分布（它的背景估计本来就吃得下深底）。
+     * @param invert 深色页反相（V2-45）：模型是在浅底文档上训的，深底浅字属于分布外。
+     *   反相只作用于**模型输入**（含 padding 填色），坐标不变，检测框照常映射回源图。
      */
     fun process(
         argb: IntArray,
@@ -34,6 +37,7 @@ class LayoutPreprocessor(
         tile: Tile,
         out: LayoutInput,
         grayOut: ByteArray? = null,
+        invert: Boolean = false,
     ) {
         val model = contract.modelInput
         require(out.width == model && out.height == model) {
@@ -46,7 +50,7 @@ class LayoutPreprocessor(
             java.util.Arrays.fill(grayOut, 0, model * model, contract.padValue.toByte())
         }
 
-        val pad = contract.padValue
+        val pad = if (invert) 255 - contract.padValue else contract.padValue
         val rPlane = 0
         val gPlane = model * model
         val bPlane = 2 * model * model
@@ -80,13 +84,17 @@ class LayoutPreprocessor(
                 val g = mix((p00 ushr 8) and 0xFF, (p10 ushr 8) and 0xFF, (p01 ushr 8) and 0xFF, (p11 ushr 8) and 0xFF, tx, ty)
                 val b = mix(p00 and 0xFF, p10 and 0xFF, p01 and 0xFF, p11 and 0xFF, tx, ty)
                 val idx = my * model + mx
-                data[rPlane + idx] = contract.normalize(0, r)
-                data[gPlane + idx] = contract.normalize(1, g)
-                data[bPlane + idx] = contract.normalize(2, b)
+                // 灰度永远取原图（审计用）；模型输入在深色页上取反相值。
                 if (grayOut != null) {
                     grayOut[idx] = ((77 * r + 150 * g + 29 * b) / 256f).roundToInt()
                         .coerceIn(0, 255).toByte()
                 }
+                val mr = if (invert) 255f - r else r
+                val mg = if (invert) 255f - g else g
+                val mb = if (invert) 255f - b else b
+                data[rPlane + idx] = contract.normalize(0, mr)
+                data[gPlane + idx] = contract.normalize(1, mg)
+                data[bPlane + idx] = contract.normalize(2, mb)
             }
         }
     }

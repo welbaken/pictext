@@ -42,6 +42,9 @@ data class LayoutSummaryStats(
     val orderAmbiguous: Boolean,
     val verticalRatio: Float,
     val maxScore: Float,
+    /** 深色页是否把模型输入反相了（V2-45）。 */
+    val inverted: Boolean = false,
+
     /** 文字类区域覆盖的页面面积占比（V2-43 信任度信号）。 */
     val textAreaRatio: Float = 0f,
     /** 墨迹落在文字类区域里的比例（V2-43 信任度信号）。 */
@@ -136,10 +139,14 @@ class LayoutPipeline(
         var decodeNanos = 0L
         var detectNanos = 0L
 
+        // 深色页（V2-45）：模型在浅底文档上训练，深底浅字属于分布外。反相只作用在模型输入上，
+        // 覆盖审计/细化仍然吃原图像素（`grayOut` 不受影响），所以坐标与墨迹语义都不变。
+        val invert = page.isDark || luminanceOf(page.backgroundColor) < DARK_LUMA
+
         for (tile in grid.tiles) {
             val t0 = System.nanoTime()
             val argb = sampler.sample(tile.src, tile.innerWidth, tile.innerHeight, page.backgroundColor)
-            preprocessor.process(argb, tile.innerWidth, tile.innerHeight, tile, input, gray)
+            preprocessor.process(argb, tile.innerWidth, tile.innerHeight, tile, input, gray, invert)
             val t1 = System.nanoTime()
             val detections = detector.detect(input, tile)
             val t2 = System.nanoTime()
@@ -267,6 +274,7 @@ class LayoutPipeline(
         val notes = ArrayList<String>(7)
         notes.add("layout_model=${contract.name}")
         notes.add("layout_tiles_${grid.count}")
+        if (invert) notes.add("layout_invert=1")
         notes.add("layout_coverage=${format(coverage.coverage)}")
         notes.add("layout_text_area=${format(trust.textAreaRatio)}")
         notes.add("layout_ink_in_text=${format(trust.inkInTextRatio)}")
@@ -292,6 +300,7 @@ class LayoutPipeline(
                 inkInTextRatio = trust.inkInTextRatio,
                 blockLineRatio = trust.blockLineRatio,
                 emptyTextRegionRatio = trust.emptyTextRegionRatio,
+                inverted = invert,
                 decodeMs = decodeNanos / 1_000_000,
                 detectMs = detectNanos / 1_000_000,
                 refineMs = refineMs,
@@ -401,13 +410,25 @@ class LayoutPipeline(
 
     private fun format(v: Float): String = String.format(java.util.Locale.US, "%.3f", v)
 
+    /** 与 App/CLI 判定 `isDark` 同一套系数（77/150/29），避免两边口径不一致。 */
+    private fun luminanceOf(argb: Int): Int {
+        val r = (argb ushr 16) and 0xFF
+        val g = (argb ushr 8) and 0xFF
+        val b = argb and 0xFF
+        return (77 * r + 150 * g + 29 * b) shr 8
+    }
+
     companion object {
         /** 低于这个分数说明模型基本没认出这一页（docs/07 §4.9）。 */
         const val MIN_USABLE_SCORE = 0.30f
 
         /** 残差区域的 id 从 1000 开始，避免和模型区域撞号。 */
         const val RESIDUAL_ID_BASE = 1000
+
+        /** 页面底色亮度低于它就算深色页，模型输入反相（V2-45）。 */
+        const val DARK_LUMA = 110
     }
 }
+
 
 
