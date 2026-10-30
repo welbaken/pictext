@@ -363,19 +363,25 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         val detector = if (settings.smartLayout) container.layoutDetector() else null
         val sampler = if (detector != null) AndroidTileSampler(source) else null
         val bg = decoded.gray.backgroundColor
-        val smart = SmartReflow().run(
-            analysis = decoded.gray,
-            page = PageContext(
-                srcWidth = decoded.srcWidth,
-                srcHeight = decoded.srcHeight,
-                backgroundColor = bg,
-                isDark = luminance(bg) < 110,
-            ),
-            planOptions = opts,
-            sampler = sampler,
-            regionSampler = sampler,
-            detector = detector,
-        )
+        // 采样器持有“整页缓存位图”（V2-40：PNG 的 decodeRegion 每次都要从头解码，24 次细化
+        // 就是 24 次整图解码）。分析一结束就释放，别让它跟着 ViewModel 一直占着十几 MB。
+        val smart = try {
+            SmartReflow().run(
+                analysis = decoded.gray,
+                page = PageContext(
+                    srcWidth = decoded.srcWidth,
+                    srcHeight = decoded.srcHeight,
+                    backgroundColor = bg,
+                    isDark = luminance(bg) < 110,
+                ),
+                planOptions = opts,
+                sampler = sampler,
+                regionSampler = sampler,
+                detector = detector,
+            )
+        } finally {
+            sampler?.close()
+        }
         val layout = smart.layout
         val plan = smart.plan
         val analysisMs = (System.nanoTime() - started) / 1_000_000

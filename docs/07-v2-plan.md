@@ -1622,7 +1622,7 @@ testdata/report-v2.md                  # 批量对比
 | 编排 | `core/plan/SmartReflow.kt`（v2 → v1 → 原图） | `SmartReflowTest`：模型缺失走 v1、v2 失败回退带诊断码、竖排走原图 |
 | V2-12（部分） | `cli/{Main,V2,DesktopLayoutDetector}.kt`：`--layout/--model/--detections/--dump-regions/--compare` | `:cli:run` 对 42 张（29 真实 + 12 夹具 + 1 设备截图）跑通；桌面 ORT 单 tile ≈20.8ms |
 | V2-13（部分） | `scripts/score-v2.ps1`、`testdata/report-v2.{md,csv}`、`testdata/layout/detection-baseline.md` | 37 张可解码图上 **v2 接管 31 张（84%）**、`auditV2` 31/31 通过、覆盖率 0.999+；6 张回退全部有诊断码 |
-| V2-13（真值收尾） | `core/src/test/.../layout/Fixture{Order,Composer,CutPolicy}Test.kt`、`FixtureSupport.kt`、`scripts/score-detection.ps1`、`testdata/report-detection.md` | 顺序 **9/10** 逐块一致；12 张真值版面 **0 次 `LAYOUT_FALLBACK`**；敏感行强制切 **0**；检测面积召回 56.5%、行覆盖 80.5%（**闸门未过，见 §13.6**） |
+| V2-13（真值收尾） | `core/src/test/.../layout/Fixture{Order,Composer,CutPolicy}Test.kt`、`FixtureSupport.kt`、`scripts/score-detection.ps1`、`testdata/report-detection.md` | 顺序 **9/10** 逐块一致；12 张真值版面 **0 次 `LAYOUT_FALLBACK`**；敏感行强制切 **0**；检测面积召回 56.5%、行覆盖 80.5%（**闸门未过，见 §13.7**） |
 | V2-32 | `app/.../layout/{ModelAssets,OrtLayoutDetector,AndroidTileSampler}.kt`、`AppContainer`、`SettingsRepository.smartLayout`（β 开关在顶栏）、`ViewerViewModel` 走 `SmartReflow` | MuMu（Android 15 / 1440×2560 / x86_64）实测：模型从 assets 装到 filesDir、ORT 双输入会话就绪、`strategy=DOC_LAYOUT`、`coverage=1.000`、`auditV2=true`、页面正常重排 |
 
 ### 13.1.1 检测基线摘要（详见 `testdata/layout/detection-baseline.md`）
@@ -1689,10 +1689,29 @@ testdata/report-v2.md                  # 批量对比
 | 模型安装 | assets → `filesDir/models/`，4,914,725 B，带版本戳 |
 | ORT 会话 | `inputs=[image, scale_factor] outputs=[fetch_name_0, fetch_name_1]`，2 线程 |
 | **v1 分析（1080×1793）** | 786ms |
-| **v2 分析（1080×1793）** | 1712ms，其中 `decode=386 detect=113 refine=707 coverage=305 order=1` |
-| v2 结果 | `strategy=DOC_LAYOUT`、24 区域 / 29 行 / 9 图、`coverage=1.000`、`auditV2=true`、`scale=3.0` |
+| **v2 分析（1080×1793，优化前）** | 1712ms（decode 386 / detect 113 / refine 707 / coverage 305 / order 1） |
+| **v2 分析（1080×1793，V2-40 第一轮后）** | **1237ms**（decode 494 / detect 69 / refine 270 / coverage 241 / order 13） |
+| v2 结果 | `strategy=DOC_LAYOUT`、24–25 区域 / 27–29 行 / 9–10 图、`coverage=1.000`、`auditV2=true`、`scale=3.0` |
 | β 开关 | 顶栏切换后立即重跑当前页，`DataStore` 持久化，重启 App 仍生效 |
 | 1440×2560 设备截图 | v2 2275ms（4 tile，8 个残差补区） |
+
+### 13.5 V2-40 第一轮：把两处重复劳动去掉（−28%）
+
+| 改动 | 效果 |
+|---|---|
+| `AndroidTileSampler` 缓存整页位图（≤4MP 才缓存；超长图仍按需解码） | refine 707→270ms：PNG 的 `decodeRegion` 必须从头解码，原来 24 个 ROI = 24 次整图解码 |
+| `CoverageAuditor.prepare/audit` 拆开，墨迹掩膜每 tile 只算一次 | coverage 305→241ms（补区前后各审计一遍，但背景估计+Otsu 与区域无关） |
+| 附带的 | detect 113→69ms（tile 也走缓存裁切，不再解码 4 次） |
+
+**还没做完的（下一轮按收益排序）**：
+
+1. **审计降采样到 240×240**：残差框只需要 ~2px 精度，像素数直接除以 4，预计 coverage 241→~80ms；
+2. **整页解码本身 ~250ms**（模拟器 PNG 解码 1.9MP）：真机大致 40–60ms，模拟器数据不能当预算；
+   若要再快，只能在导入时预生成缩略图缓存；
+3. **refine 270ms / 25 个区域 ≈ 11ms/区域**：可以对 FIGURE 区域用半分辨率细化
+   （只判断“里面有没有字”，不需要 1px 字缝），预计再省 20–25%。
+4. 预算对照：真机（骁龙 7 系）大约是模拟器 x86 的 1/3，按此估算当前 1080×1793 ≈ 400ms，
+   §2.5 的 350ms 目标属于“接近但未达标”，需要第 1、3 条都做完。
 
 > **性能结论（这就是 V2-40 的输入）**：`refine`（ROI 细化 707ms）和 `coverage`（305ms）
 > 占 v2 总耗时的 59%，模型推理只有 113ms。优化顺序应当是：
@@ -1705,14 +1724,14 @@ testdata/report-v2.md                  # 批量对比
 > “正在分析版式…”）。这是模拟器存储实现的问题，不是 App 逻辑——同一份图从相册重新选一次就能过。
 > 真机验收（V2-41）要在真实设备上复核“打开/分享 50 次不卡”。
 
-### 13.5 未完成（按优先级）
+### 13.6 未完成（按优先级）
 
 1. **V2-40 性能**：先给 `LayoutPipeline` 加分段计时（tile 解码 / 预处理 / 推理 / 细化 / 审计），
    再针对最大头优化；目标 1080×2400 ≤350ms、1080×20000 ≤1.5s。
 2. **V2-33 / V2-41**：`--compare` 批量 A/B 报告、真机验收清单（模拟器已连通 `127.0.0.1:16416`）。
 3. **V2-42 量化**：不阻塞 v2.0。
 
-### 13.6 V2-13 闸门结论（2026-10-30）
+### 13.7 V2-13 闸门结论（2026-10-30）
 
 用 12 张 HTML 真值把“顺序 / 组装 / 切分 / 检测”四层都量了一遍，明细见
 `testdata/layout/detection-baseline.md` §7：
@@ -1733,3 +1752,4 @@ testdata/report-v2.md                  # 批量对比
    （这三类页面的共同特征是“文字类面积占比低 + 块类面积大”，`CoverageReport` 已经算出来了）；
 2. 再补**深色反相**预处理（成本极低）；气泡内小字需要小目标检测，成本高，v2.1 再说；
 3. 换模型（PP-DocLayout-M/L 或云侧）留到 v2.1，不为 12 张合成夹具换架构。
+

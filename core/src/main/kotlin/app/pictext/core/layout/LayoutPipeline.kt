@@ -176,7 +176,9 @@ class LayoutPipeline(
         // 而残差补区本来就是为这种情况设计的、且**绝不丢内容**（补不到行就整块保留像素）。
         // 所以这里改成：先补区，补完再看覆盖率；补区后仍不达标（或残差块过多）才回退。
         val tCoverage = System.nanoTime()
-        val first = coverageOf(tileGrays, regions)
+        // 墨迹掩膜只算一次：补区前后各审计一遍，但背景估计 + Otsu 与区域无关（V2-40）。
+        val prepared = prepareAudit(tileGrays)
+        val first = auditor.report(prepared.map { it.audit(regions) })
         if (first.residuals.size > options.maxResiduals) {
             return LayoutOutcome.Fallback(
                 "layout_residual_high",
@@ -205,7 +207,7 @@ class LayoutPipeline(
         }
 
         val all = regions + residuals
-        val coverage = coverageOf(tileGrays, all)
+        val coverage = auditor.report(prepared.map { it.audit(all) })
         val coverageMs = (System.nanoTime() - tCoverage) / 1_000_000
         if (coverage.coverage < options.minCoverage) {
             val code = if (coverage.residualRatio > options.residualFailRatio) {
@@ -287,6 +289,13 @@ class LayoutPipeline(
         regions: List<LayoutRegion>,
     ): CoverageReport = auditor.report(tileGrays.map { (tile, gray) -> auditor.auditTile(gray, tile, regions) })
 
+    /**
+     * 预计算每个 tile 的墨迹掩膜（V2-40）：管线里要审计两次（补区前 / 补区后），
+     * 背景估计 + Otsu 只做一次。
+     */
+    private fun prepareAudit(tileGrays: List<Pair<Tile, GrayImage>>): List<CoverageAuditor.PreparedTile> =
+        tileGrays.map { (tile, gray) -> auditor.prepare(gray, tile) }
+
     /** XY-cut 的断口阈值要一个“行高”，这里取所有文字行（BODY 优先）的中位数。 */
     private fun medianLineHeight(regions: List<LayoutRegion>): Float {
         val all = regions.flatMap { it.lines }
@@ -313,3 +322,4 @@ class LayoutPipeline(
         const val RESIDUAL_ID_BASE = 1000
     }
 }
+
