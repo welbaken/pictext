@@ -89,22 +89,52 @@ class SmartReflow(
                     projectionPath(analysis, page, planOptions, code, plan.notes, outcome)
                 } else {
                     val audit = LayoutAuditor.audit(outcome.layout, plan, planOptions)
-                    if (audit.ok) {
-                        SmartReflowResult(
-                            layout = outcome.layout,
-                            plan = plan,
-                            projectionAudit = PlanAuditor.audit(outcome.layout, plan),
-                            layoutAudit = audit,
-                            layoutStats = outcome,
-                            fallbackCode = null,
-                            v2Outcome = outcome,
-                        )
-                    } else {
-                        projectionPath(analysis, page, planOptions, "layout_audit_failed", audit.issues, outcome)
+                    when {
+                        !audit.ok ->
+                            projectionPath(analysis, page, planOptions, "layout_audit_failed", audit.issues, outcome)
+
+                        // V2-43：可信度闸门。面积信号分不开好坏页，只有“v2 找到的
+                        // 文字行明显少于 v1”才说明文字被框成了图片。复核要跑一次 v1 分析，
+                        // 所以只在文字面积本来就很小的页面上做，正常文章页零成本。
+                        else -> {
+                            val v1 = if (TrustGate.needsCheck(outcome.summary, layoutOptions)) {
+                                LayoutAnalyzer(analysisOptions).analyze(analysis, page.srcWidth, page.srcHeight)
+                            } else {
+                                null
+                            }
+                            if (v1 != null && TrustGate.looksLikePicture(outcome.layout, v1, layoutOptions)) {
+                                projectionPath(
+                                    analysis = analysis,
+                                    page = page,
+                                    planOptions = planOptions,
+                                    code = TrustGate.CODE,
+                                    v2Outcome = outcome,
+                                    v1Layout = v1,
+                                )
+                            } else {
+                                SmartReflowResult(
+                                    layout = outcome.layout,
+                                    plan = plan,
+                                    projectionAudit = PlanAuditor.audit(outcome.layout, plan),
+                                    layoutAudit = audit,
+                                    layoutStats = outcome,
+                                    fallbackCode = null,
+                                    v2Outcome = outcome,
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+
+    /** 可信度闸门的第二段：v2 的文字行数相对 v1 塌了，就认为这一页被框成了图片。 */
+    private fun textLooksLikePicture(outcome: LayoutOutcome.Success, v1: PageLayout): Boolean {
+        val v1Lines = v1.textLines().size
+        if (v1Lines < layoutOptions.trustMinV1Lines) return false
+        val v2Lines = outcome.layout.textLines().size
+        return v2Lines < layoutOptions.trustLineRatio * v1Lines
     }
 
     /** 只用 v1 的入口（模型不可用 / 用户关掉 v2 / 单测）。 */
@@ -121,8 +151,9 @@ class SmartReflow(
         code: String,
         extra: List<String> = emptyList(),
         v2Outcome: LayoutOutcome? = null,
+        v1Layout: PageLayout? = null,
     ): SmartReflowResult {
-        val layout = LayoutAnalyzer(analysisOptions).analyze(analysis, page.srcWidth, page.srcHeight)
+        val layout = v1Layout ?: LayoutAnalyzer(analysisOptions).analyze(analysis, page.srcWidth, page.srcHeight)
         val plan = ReflowPlanner().plan(layout, planOptions)
         return SmartReflowResult(
             layout = layout,
@@ -175,3 +206,4 @@ class SmartReflow(
         )
     }
 }
+

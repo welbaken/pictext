@@ -1624,6 +1624,7 @@ testdata/report-v2.md                  # 批量对比
 | V2-13（部分） | `scripts/score-v2.ps1`、`testdata/report-v2.{md,csv}`、`testdata/layout/detection-baseline.md` | 37 张可解码图上 **v2 接管 31 张（84%）**、`auditV2` 31/31 通过、覆盖率 0.999+；6 张回退全部有诊断码 |
 | V2-13（真值收尾） | `core/src/test/.../layout/Fixture{Order,Composer,CutPolicy}Test.kt`、`FixtureSupport.kt`、`scripts/score-detection.ps1`、`testdata/report-detection.md` | 顺序 **9/10** 逐块一致；12 张真值版面 **0 次 `LAYOUT_FALLBACK`**；敏感行强制切 **0**；检测面积召回 56.5%、行覆盖 80.5%（**闸门未过，见 §13.7**） |
 | V2-32 | `app/.../layout/{ModelAssets,OrtLayoutDetector,AndroidTileSampler}.kt`、`AppContainer`、`SettingsRepository.smartLayout`（β 开关在顶栏）、`ViewerViewModel` 走 `SmartReflow` | MuMu（Android 15 / 1440×2560 / x86_64）实测：模型从 assets 装到 filesDir、ORT 双输入会话就绪、`strategy=DOC_LAYOUT`、`coverage=1.000`、`auditV2=true`、页面正常重排 |
+| V2-43 | `core/.../plan/TrustGate.kt`、`LayoutPipeline` 的四个信任度信号、`SmartReflow` 两段式复核 | 聊天夹具（文字被框成图片）**回退 v1**：`layout_text_as_figure`；42 张真实样例 **零误伤**（v2 31→30 全部来自夹具）；正常页零成本（文字面积 ≥0.20 不复核） |
 
 ### 13.1.1 检测基线摘要（详见 `testdata/layout/detection-baseline.md`）
 
@@ -1703,6 +1704,23 @@ testdata/report-v2.md                  # 批量对比
 | `CoverageAuditor.prepare/audit` 拆开，墨迹掩膜每 tile 只算一次 | coverage 305→241ms（补区前后各审计一遍，但背景估计+Otsu 与区域无关） |
 | 附带的 | detect 113→69ms（tile 也走缓存裁切，不再解码 4 次） |
 
+### 13.5.1 V2-43 可信度闸门：把“文字被框成图片”的页整体交回 v1
+
+判定用**和 v1 交叉验证**（`v2 行数 < 0.6 × v1 行数`），且只在“文字面积 < 0.20”时才跑 v1 复核，
+正常文章页零成本。实测（54 张 = 42 真实 + 12 夹具）：
+
+| 量 | 结果 |
+|---|---|
+| 触发 | `05-chat@1080` 一张 → `layout_text_as_figure`（v2 9 行 / v1 18 行 = 0.50） |
+| 误伤 | **0**：长图文流 0.72、文章页 1.12–1.87、海报 v1 只 5 行（低于 `trustMinV1Lines` 不比） |
+| 复核成本 | 6/12 夹具进入复核段，仅触发的页多跑一次 v1 分析（约 150ms） |
+| 单测 | `TrustGateDecisionTest`：边界 60/100 用千分整数比较，不做浮点近似 |
+
+**为什么五个面积类信号都没用**（这是本节最重要的结论）：`textAreaRatio`、`inkInTextRatio`、
+`blockLineRatio`、`emptyTextRegionRatio` 在 12 张夹具上与真值召回**不同向**——
+深色文章 `inkInTextRatio` 0.79 却仍是低召回，正常卡片流 `blockLineRatio` 到 0.44。
+所以判定必须落到“和既有实现比”，不能只看模型自己的输出。
+
 **还没做完的（下一轮按收益排序）**：
 
 1. **审计降采样到 240×240**：残差框只需要 ~2px 精度，像素数直接除以 4，预计 coverage 241→~80ms；
@@ -1748,8 +1766,7 @@ testdata/report-v2.md                  # 批量对比
 （面积召回 72–75%、行覆盖 100%），在**深色模式（30%）、聊天气泡（25%）、海报（35%）** 明显掉。
 按 §2.7 的风险约定，这里**停下来评估，不直接进 M2**，处理顺序建议：
 
-1. 先把**回退闸门**做对：深色/气泡/海报页应当在检测阶段判为“不可信”整体走 v1
-   （这三类页面的共同特征是“文字类面积占比低 + 块类面积大”，`CoverageReport` 已经算出来了）；
-2. 再补**深色反相**预处理（成本极低）；气泡内小字需要小目标检测，成本高，v2.1 再说；
-3. 换模型（PP-DocLayout-M/L 或云侧）留到 v2.1，不为 12 张合成夹具换架构。
+0. ~~先做“不可信页整体回退”~~：**已完成（V2-43，见 §13.5.1）**，聊天页已整体交回 v1，真实样例零误伤；
+1. 再补**深色反相**预处理（成本极低）；气泡内小字需要小目标检测，成本高，v2.1 再说；
+2. 换模型（PP-DocLayout-M/L 或云侧）留到 v2.1，不为 12 张合成夹具换架构。
 

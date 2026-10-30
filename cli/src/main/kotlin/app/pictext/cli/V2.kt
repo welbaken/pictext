@@ -250,10 +250,13 @@ fun summaryLine(result: SmartReflowResult): String {
         "scale=${"%.2f".format(result.plan.bodyScale)} mode=${result.plan.mode}"
     val extra = if (s != null) {
         " tiles=${s.tiles} dets=${s.detections} residuals=${s.residuals} " +
-            "coverage=${"%.4f".format(s.coverage)} ambiguous=${s.orderAmbiguous}"
+            "coverage=${"%.4f".format(s.coverage)} ambiguous=${s.orderAmbiguous} " +
+            "textArea=${"%.3f".format(s.textAreaRatio)} inkInText=${"%.3f".format(s.inkInTextRatio)} " +
+            "blockLines=${"%.3f".format(s.blockLineRatio)} emptyText=${"%.3f".format(s.emptyTextRegionRatio)}"
     } else {
         ""
     }
     val ok = audit?.let { " auditV2=${if (it.ok) "ok" else "FAIL(${it.issues})"}" } ?: ""
     return base + extra + ok
 }
+

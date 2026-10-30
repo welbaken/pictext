@@ -42,6 +42,14 @@ data class LayoutSummaryStats(
     val orderAmbiguous: Boolean,
     val verticalRatio: Float,
     val maxScore: Float,
+    /** 文字类区域覆盖的页面面积占比（V2-43 信任度信号）。 */
+    val textAreaRatio: Float = 0f,
+    /** 墨迹落在文字类区域里的比例（V2-43 信任度信号）。 */
+    val inkInTextRatio: Float = 0f,
+    /** 非文字类区域里细化出的行 / 全页行（V2-43：文字被框成图片）。 */
+    val blockLineRatio: Float = 0f,
+    /** 文字类区域里细化不出行的比例（V2-43：框落在空白处）。 */
+    val emptyTextRegionRatio: Float = 0f,
     /** 解码 + 预处理（tile 采样、缩放、归一化）。 */
     val decodeMs: Long = 0,
     /** 推理（ORT session.run 累计）。 */
@@ -255,10 +263,15 @@ class LayoutPipeline(
         val tOrder = System.nanoTime()
         val ordered = orderer.order(all, medianLineHeight(all))
         val orderMs = (System.nanoTime() - tOrder) / 1_000_000
-        val notes = ArrayList<String>(5)
+        val trust = trustSignal(page, prepared, all, coverage.ink)
+        val notes = ArrayList<String>(7)
         notes.add("layout_model=${contract.name}")
         notes.add("layout_tiles_${grid.count}")
         notes.add("layout_coverage=${format(coverage.coverage)}")
+        notes.add("layout_text_area=${format(trust.textAreaRatio)}")
+        notes.add("layout_ink_in_text=${format(trust.inkInTextRatio)}")
+        notes.add("layout_block_lines=${format(trust.blockLineRatio)}")
+        notes.add("layout_empty_text_regions=${format(trust.emptyTextRegionRatio)}")
         if (residuals.isNotEmpty()) notes.add("layout_residuals=${residuals.size}")
         if (ordered.ambiguous) notes.add("layout_order_ambiguous")
 
@@ -275,6 +288,10 @@ class LayoutPipeline(
                 orderAmbiguous = ordered.ambiguous,
                 verticalRatio = verticalRatio,
                 maxScore = maxScore,
+                textAreaRatio = trust.textAreaRatio,
+                inkInTextRatio = trust.inkInTextRatio,
+                blockLineRatio = trust.blockLineRatio,
+                emptyTextRegionRatio = trust.emptyTextRegionRatio,
                 decodeMs = decodeNanos / 1_000_000,
                 detectMs = detectNanos / 1_000_000,
                 refineMs = refineMs,
@@ -282,6 +299,76 @@ class LayoutPipeline(
                 orderMs = orderMs,
             ),
         )
+    }
+
+    /** 页面检测结果的可信度信号（V2-43）。 */
+    private data class TrustSignal(
+        val textAreaRatio: Float,
+        val inkInTextRatio: Float,
+        /** 细化在**非文字类**区域里找到的行数占全部行的比例：字被框成图的主要特征。 */
+        val blockLineRatio: Float,
+        /** 文字类区域里“一行都没细化出来”的比例：框落在空白处的主要特征。 */
+        val emptyTextRegionRatio: Float,
+    )
+
+    /**
+     * 算可信度信号（V2-43）。四个信号都不需要真值、不依赖 OCR：
+     *
+     * - `textAreaRatio`：文字类区域覆盖的页面面积；
+     * - `inkInTextRatio`：墨迹落在文字类区域里的比例；
+     * - `blockLineRatio`：**细化在 FIGURE/TABLE 里找到的行 / 全页行**——
+     *   文字被框成图片时（聊天气泡、海报大字）这个值会明显抬起来；
+     * - `emptyTextRegionRatio`：**文字类区域里细化不出行的比例**——框落在空白/装饰上时抬高。
+     *
+     * 前两个是“面积视角”，后两个是“细化结果视角”。实测前者分不开好坏页
+     * （深色文章的 `inkInTextRatio` 高达 0.79 却仍漏检），判定只用后两个。
+     */
+    private fun trustSignal(
+        page: PageContext,
+        prepared: List<CoverageAuditor.PreparedTile>,
+        regions: List<LayoutRegion>,
+        totalInk: Int,
+    ): TrustSignal {
+        // 面积：32px 粗网格，避免为“统计”再光栅化一整页。
+        val cell = 32
+        val cols = (page.srcWidth + cell - 1) / cell
+        val rows = (page.srcHeight + cell - 1) / cell
+        val grid = BooleanArray(cols * rows)
+        for (r in regions) {
+            if (!r.isTextual) continue
+            val x0 = (r.bounds.left / cell).coerceIn(0, cols - 1)
+            val x1 = ((r.bounds.right - 1) / cell).coerceIn(0, cols - 1)
+            val y0 = (r.bounds.top / cell).coerceIn(0, rows - 1)
+            val y1 = ((r.bounds.bottom - 1) / cell).coerceIn(0, rows - 1)
+            for (y in y0..y1) {
+                val base = y * cols
+                for (x in x0..x1) grid[base + x] = true
+            }
+        }
+        val marked = grid.count { it }
+        val textAreaRatio = if (grid.isEmpty()) 0f else marked.toFloat() / grid.size
+
+        var inkInText = 0
+        for (t in prepared) inkInText += t.inkIn(regions) { it.isTextual }
+        val inkInTextRatio = if (totalInk <= 0) 0f else inkInText.toFloat() / totalInk
+
+        var allLines = 0
+        var blockLines = 0
+        var textRegions = 0
+        var emptyTextRegions = 0
+        for (r in regions) {
+            val n = r.lines.size
+            allLines += n
+            if (r.isTextual) {
+                textRegions++
+                if (n == 0) emptyTextRegions++
+            } else {
+                blockLines += n
+            }
+        }
+        val blockLineRatio = if (allLines <= 0) 0f else blockLines.toFloat() / allLines
+        val emptyTextRegionRatio = if (textRegions <= 0) 0f else emptyTextRegions.toFloat() / textRegions
+        return TrustSignal(textAreaRatio, inkInTextRatio, blockLineRatio, emptyTextRegionRatio)
     }
 
     private fun coverageOf(
@@ -322,4 +409,5 @@ class LayoutPipeline(
         const val RESIDUAL_ID_BASE = 1000
     }
 }
+
 

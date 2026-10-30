@@ -120,6 +120,39 @@ class CoverageAuditor(private val options: LayoutOptions = LayoutOptions()) {
                 residuals = residuals,
             )
         }
+
+        /** 该 tile 的总墨点数（[audit] 已经算过，这里只是给“信任度判定”读一次）。 */
+        fun inkPixels(): Int {
+            if (valid.isEmpty || ink.isEmpty()) return 0
+            var count = 0
+            for (y in valid.top until valid.bottom) {
+                val base = y * n
+                for (x in valid.left until valid.right) if (ink[base + x]) count++
+            }
+            return count
+        }
+
+        /**
+         * 落在**指定子集**区域里的墨点数（V2-43 信任度判定）。
+         *
+         * 用它算“墨迹里有多少是文字”：如果模型把正文都框成了 FIGURE，这个比例会很低，
+         * 说明这一页的检测结果不可信，应该整体交给 v1，而不是拿错框硬排。
+         */
+        fun inkIn(regions: List<LayoutRegion>, keep: (LayoutRegion) -> Boolean): Int {
+            if (valid.isEmpty || ink.isEmpty()) return 0
+            val subset = regions.filter(keep)
+            if (subset.isEmpty()) return 0
+            val mask = coveredMask(tile, subset, valid, n)
+            var count = 0
+            for (y in valid.top until valid.bottom) {
+                val base = y * n
+                for (x in valid.left until valid.right) {
+                    val i = base + x
+                    if (ink[i] && mask[i]) count++
+                }
+            }
+            return count
+        }
     }
 
     /**
