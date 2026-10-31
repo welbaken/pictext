@@ -54,6 +54,7 @@ fun main(args: Array<String>) {
         printUsage()
         return
     }
+    val memory = PeakMemory.start()
     if (args[0] == "summary") {
         summary(args.drop(1))
         return
@@ -77,6 +78,9 @@ fun main(args: Array<String>) {
     var minCoverage: Float? = null
     var residualFail: Float? = null
     var scoreThreshold: Float? = null
+    var auditDownsample: Int? = null
+    var figureFullRes = false
+    var serialRefine = false
     var i = 1
     while (i < args.size) {
         when (args[i]) {
@@ -94,6 +98,9 @@ fun main(args: Array<String>) {
             "--min-coverage" -> minCoverage = args.getOrNull(++i)?.toFloatOrNull()
             "--residual-fail" -> residualFail = args.getOrNull(++i)?.toFloatOrNull()
             "--score" -> scoreThreshold = args.getOrNull(++i)?.toFloatOrNull()
+            "--audit-downsample" -> auditDownsample = args.getOrNull(++i)?.toIntOrNull()
+            "--figure-full-res" -> figureFullRes = true
+            "--serial-refine" -> serialRefine = true
             else -> if (!args[i].startsWith("--")) outDir = File(args[i])
         }
         i++
@@ -185,6 +192,19 @@ fun main(args: Array<String>) {
                     minCoverage = minCoverage ?: LayoutOptions().minCoverage,
                     residualFailRatio = residualFail ?: LayoutOptions().residualFailRatio,
                     scoreThreshold = scoreThreshold ?: LayoutOptions().scoreThreshold,
+                    auditDownsample = auditDownsample ?: LayoutOptions().auditDownsample,
+                    // 调参/基准用：恢复 FIGURE 全分辨率细化，便于量 V2-50 的收益。
+                    refineFigureMaxWidth = if (figureFullRes) {
+                        LayoutOptions().refineMaxWidth
+                    } else {
+                        LayoutOptions().refineFigureMaxWidth
+                    },
+                    refineFigureMaxPixels = if (figureFullRes) {
+                        LayoutOptions().refineMaxPixels
+                    } else {
+                        LayoutOptions().refineFigureMaxPixels
+                    },
+                    parallelRefine = !serialRefine,
                 ),
             )
             layout = v2.layout
@@ -200,6 +220,7 @@ fun main(args: Array<String>) {
         audit = PlanAuditor.audit(layout, plan)
     }
     val t1 = System.nanoTime()
+    val peakMb = memory.stopAndPeakMb()
 
     if (dumpLines) {
         for ((index, line) in layout.textLines().withIndex()) {
@@ -255,6 +276,7 @@ fun main(args: Array<String>) {
             analysisOptions = analysisOptions,
             analyzeNanos = t1 - t0,
             planNanos = t1 - t0,
+            peakMemMb = peakMb,
             v2 = v2,
         ),
     )
@@ -265,7 +287,7 @@ fun main(args: Array<String>) {
             "scale=${"%.3f".format(plan.scale)} lineH=${"%.1f".format(layout.medianLineHeight)} " +
             "effPx=${"%.1f".format(plan.scale * layout.medianLineHeight)} items=${plan.items.size} " +
             "output=${plan.outputWidth}x${plan.height} " +
-            "analyze=${(t1 - t0) / 1_000_000}ms",
+            "analyze=${(t1 - t0) / 1_000_000}ms peakMem=${peakMb}MB",
     )
     if (v2 != null) {
         println(summaryLine(v2))
@@ -531,6 +553,7 @@ private fun planJson(
     analysisOptions: AnalysisOptions,
     analyzeNanos: Long,
     planNanos: Long,
+    peakMemMb: Long,
     v2: SmartReflowResult?,
 ): String {
     val sb = StringBuilder()
@@ -579,6 +602,7 @@ private fun planJson(
     }
     line("\"analyzeMs\": ${"%.1f".format(analyzeNanos / 1_000_000.0)}")
     line("\"planMs\": ${"%.1f".format(planNanos / 1_000_000.0)}")
+    line("\"peakMemMb\": $peakMemMb")
     sb.append("  \"itemsDetail\": [\n")
     for ((i, item) in plan.items.withIndex()) {
         val kind = when (item) {
@@ -615,4 +639,44 @@ private fun blockKind(block: Block): String = when (block) {
 
 private fun jsonMap(map: Map<*, Int>): String =
     map.entries.joinToString(", ", "{", "}") { "\"${it.key}\": ${it.value}" }
+
+/**
+ * 峰值内存采样（V2-40 验收用）。
+ *
+ * `Runtime.totalMemory() - freeMemory()` 只是 JVM 堆的“当前已用”，GC 之后会掉下来；
+ * 单次读一次会严重低估峰值，所以用一个 20ms 的守护线程持续采样取最大值。
+ * 不包含 native（ORT）内存，CLI 侧用于对比“改动前后/不同页面尺寸”，
+ * Android 侧要用 `Debug.getMemoryInfo` 另行实测。
+ */
+private class PeakMemory private constructor() {
+    @Volatile private var peak = 0L
+    @Volatile private var running = true
+    private val thread = Thread {
+        val rt = Runtime.getRuntime()
+        while (running) {
+            val used = rt.totalMemory() - rt.freeMemory()
+            if (used > peak) peak = used
+            try {
+                Thread.sleep(20)
+            } catch (_: InterruptedException) {
+                return@Thread
+            }
+        }
+    }.also {
+        it.isDaemon = true
+        it.name = "pictext-peak-memory"
+        it.start()
+    }
+
+    fun stopAndPeakMb(): Long {
+        running = false
+        thread.interrupt()
+        thread.join(200)
+        return peak / (1024 * 1024)
+    }
+
+    companion object {
+        fun start(): PeakMemory = PeakMemory()
+    }
+}
 

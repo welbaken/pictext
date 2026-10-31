@@ -255,7 +255,8 @@ fun summaryLine(result: SmartReflowResult): String {
             "coverage=${"%.4f".format(s.coverage)} ambiguous=${s.orderAmbiguous} " +
             (if (s.inverted) "invert=1 " else "") +
             "textArea=${"%.3f".format(s.textAreaRatio)} inkInText=${"%.3f".format(s.inkInTextRatio)} " +
-            "blockLines=${"%.3f".format(s.blockLineRatio)} emptyText=${"%.3f".format(s.emptyTextRegionRatio)}"
+            "blockLines=${"%.3f".format(s.blockLineRatio)} emptyText=${"%.3f".format(s.emptyTextRegionRatio)} " +
+            s.stageSummary()
     } else {
         ""
     }

@@ -1627,6 +1627,7 @@ testdata/report-v2.md                  # 批量对比
 | V2-43 | `core/.../plan/TrustGate.kt`、`LayoutPipeline` 的四个信任度信号、`SmartReflow` 两段式复核 | 聊天夹具（文字被框成图片）**回退 v1**：`layout_text_as_figure`；42 张真实样例 **零误伤**（v2 31→30 全部来自夹具）；正常页零成本（文字面积 ≥0.20 不复核） |
 | V2-48 | `core/.../layout/RegionDeduper.kt`、`LayoutPipeline` 在补区后调用 | 690×1533 深色页的重复 src **17 组 → 0**；42 张批量 `dupSrc=0`、`itemsDropped=0`；`:core:test` 新增 7 个去重用例 |
 | V2-49 | RegionRefiner 的“行带贴边 → ROI 再外扩” | 同一张图标题第二行右缘 533 → 538（实际墨迹 537），仍是 DOC_LAYOUT、auditV2=ok |
+| V2-50 | 审计降采样 240²、FIGURE 半分辨率细化、区域并行、Android 整页灰度缓存、CLI/Android 内存采样、`scripts/bench-v2.ps1` | 1080×2400 CLI 977→751ms、1080×20000 2335→2057ms；MuMu 1080×2400 3065→1901ms；**目标仍未达标**（详见 §13.6.5） |
 
 ### 13.1.1 检测基线摘要（详见 `testdata/layout/detection-baseline.md`）
 
@@ -1753,9 +1754,11 @@ testdata/report-v2.md                  # 批量对比
 
 ### 13.6 未完成（按优先级）
 
-1. **V2-40 性能**：先给 `LayoutPipeline` 加分段计时（tile 解码 / 预处理 / 推理 / 细化 / 审计），
-   再针对最大头优化；目标 1080×2400 ≤350ms、1080×20000 ≤1.5s。
-2. **V2-33 / V2-41**：`--compare` 批量 A/B 报告、真机验收清单（模拟器已连通 `127.0.0.1:16416`）。
+1. **V2-40 性能**：第二轮已做审计降采样、FIGURE 半分辨率、并行细化、Android 灰度缓存
+   （§13.6.5），但 1080×2400 折算真机仍约 390ms（目标 350ms）、峰值 PSS 313MB（目标 180MB），
+   **仍未达标**；剩余大头是 refine（模拟器 741ms）与长图内存。
+2. **V2-33 / V2-41**：`compare.png` 与 `notes-v2.csv` 已补（§13.6.6）；真机验收清单、
+   人工 A/B、正式 keystore 仍需用户参与（§13.6.7）。
 3. **V2-42 量化**：不阻塞 v2.0。
 
 ### 13.6.1 V2-44：打开图片卡在“正在分析版式…”（已修，2026-10-30）
@@ -1894,6 +1897,67 @@ v2 的文字行从 7 降到 2，于是 V2-43 可信度闸门按设计回退 v1�
 `line touching the roi edge grows outward to the glyph` /
 `line not touching the roi edge is not grown`。
 
+
+### 13.6.5 V2-40 第二轮：审计降采样 / FIGURE 半分辨率 / 并行细化（2026-10-31）
+
+**改了什么**
+
+1. **覆盖审计降采样**（`LayoutOptions.auditDownsample=2`）：`CoverageAuditor` 先把 480² 的
+   tile 灰度按 2×2 块平均降到 240²，再跑背景估计 + Otsu；有效区、区域掩膜、残差聚类全在
+   240² 上，只有残差框映射回 S 时乘回 2。残差精度损失 ≤2 模型像素（1080 宽约 4.5 源像素），
+   远小于 `residualDilatePx=8` 的合并半径；覆盖率是面积比，口径不变。
+   单测仍用 `CoverageAuditor(downsample=1)`，坐标断言保持 1px 精确。
+2. **FIGURE/TABLE/OTHER 半分辨率细化**：这类区域只需要判断“里面有没有稳定的文字行”，
+   用 `refineFigureMaxWidth=700` / `refineFigureMaxPixels=625k`；TEXT/TITLE/CAPTION 不受影响
+   （1px 字缝是切分依据，不能糊）。
+3. **区域细化并行**：区域之间互相独立、细化是纯 CPU，`LayoutPipeline` 在区域数 ≥6 时用
+   `parallelStream().map().collect()`，`collect` 保持 encounter order，输出顺序与串行一致。
+   `LayoutOptions.parallelRefine=false` 可关（基准对比用，CLI `--serial-refine`）。
+4. **Android 整页灰度缓存**（`AndroidTileSampler`）：整页缓存位图先一次性转成 1 byte/px 的
+   `GrayImage`，ROI 采样不再每次 `Canvas.drawBitmap + getPixels + ARGB→灰度`；线程安全用
+   `@Synchronized` 建缓存 + `@Volatile` 快路径。
+5. **CLI 峰值内存 / 分段耗时**：`Runtime.totalMemory-freeMemory` 20ms 采样，输出
+   `peakMem=…MB` 并写进 `plan.json`；`--audit-downsample N`、`--figure-full-res`、
+   `--serial-refine` 三个基准旋钮。
+6. **Android 峰值 PSS**：分析前后 `Debug.getMemoryInfo` + 50ms 采样线程，日志里输出
+   `pss` / `peakPss`（含 native/ORT/图形，Runtime 看不到）。
+
+**CLI 桌面实测**（`scripts/bench-v2.ps1`，同一台机器，取 N 次最快；素材是 690×10305 真实长图）：
+
+| 尺寸 | 基线（串行 + 审计全分辨率 + FIGURE 全分辨率） | 优化后 | 变化 |
+|---|---|---|---|
+| 1080×2400 | 977ms（refine 356 / coverage 108） | **751ms**（refine 166 / coverage 50） | −23% |
+| 1920×1080 | 735ms（refine 211 / coverage 64） | **713ms**（refine 227 / coverage 41） | −3%（噪声内） |
+| 1080×20000 | 2335ms（refine 994 / coverage 245） | **2057ms**（refine 699 / coverage 129） | −12% |
+| 1080×20000 峰值堆 | 500MB | 509MB | 无变化（CLI 先解整张图：IntArray 86MB + 位图） |
+
+**MuMu 模拟器实测**（Android 15 / x86_64 / debug APK / 1080×2400，同一张图）：
+
+| 阶段 | 优化前* | + 整页灰度缓存 | + 并行细化 |
+|---|---|---|---|
+| decode | 1254ms | 744ms | 634ms |
+| detect | 177ms | 256ms | 93ms |
+| refine | 1056ms | 951ms | **741ms** |
+| coverage | 164ms | 131ms | 157ms |
+| 总 | 3065ms | 2442ms | **1901ms** |
+
+\* 第一列已经包含“审计降采样 + FIGURE 半分辨率”；模拟器数字波动大（同一构建 ±300ms），
+只用于看趋势。
+
+**结论：V2-40 仍然没有达标，不能写成已完成。**
+
+- 按 §13.5 的换算（模拟器 x86 ≈ 骁龙 7 系的 1/3）估算 1080×2400：
+  decode 真机约 60ms（文档实测量级，不按 1/3）+ detect 31 + refine 247 + coverage 52
+  ≈ **390ms**，离 350ms 还差约 10%；1920×1080 估算 ≈ 50+22+333+33 = **438ms**，离 400ms 差 10%。
+- 1080×20000：CLI 2057ms（目标 1500ms），Android 未在模拟器上打开（内存/耗时都不适合），
+  这一项**没有真机数据**。
+- 峰值内存：CLI 509MB 是“整图 IntArray + 整图位图 + 整页灰度”的桌面口径，不代表 Android；
+  Android debug 1080×2400 的 `peakPss` 实测 **313MB**（release 在 MuMu 上走 ARM 翻译，
+  331MB，不可比）。**离 180MB 有明显差距**，需要真机 release 复核后再定论。
+- 下一步（按收益）：① refine 仍是最大头（模拟器 741ms，且 1920×1080 上 11 个区域就 998ms），
+  先把 TEXT ROI 也按 0.75× 降采样或把 `RowSegmenter/ColumnInk` 的多次全 ROI 遍历合并；
+  ② 真机 release 用 3 台设备复测 PSS；③ 长图 ROI 解码在 Android 上仍是按需 `decodeRegion`，
+  1080×20000 需要专门的“分块灰度缓存”。
 
 ### 13.7 V2-13 闸门结论（2026-10-30）
 

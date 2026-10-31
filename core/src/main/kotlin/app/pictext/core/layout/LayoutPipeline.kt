@@ -109,7 +109,7 @@ class LayoutPipeline(
     )
     private val fixer = RegionKindFixer(options)
     private val deduper = RegionDeduper()
-    private val auditor = CoverageAuditor(options)
+    private val auditor = CoverageAuditor(options, options.auditDownsample)
     private val orderer = ReadingOrder(options)
     private val composer = PageComposer()
 
@@ -171,8 +171,17 @@ class LayoutPipeline(
         // 区域 + 细化 + 二次判定。
         val tRefine = System.nanoTime()
         val built = builder.build(mapped, page.size)
-        var regions = built.map { fixer.fix(it, refiner.refine(regionSampler, page, it)) }
-        regions = regions.map { r -> r.copy(lines = fixer.normalizeRoles(r)) }
+        // V2-50：区域之间互相独立，细化是纯 CPU；按区域并行能把 refine 段（1080×2400
+        // 模拟器 ~1s）压到核数量级。`parallelStream().collect` 保持 encounter order，
+        // 输出的区域/行顺序与串行完全一致，不确定性的来源仍是投影本身。
+        val fixed = if (options.parallelRefine && built.size >= PARALLEL_REFINE_MIN_REGIONS) {
+            built.parallelStream()
+                .map { r -> fixer.fix(r, refiner.refine(regionSampler, page, r)) }
+                .collect(java.util.stream.Collectors.toList())
+        } else {
+            built.map { r -> fixer.fix(r, refiner.refine(regionSampler, page, r)) }
+        }
+        var regions = fixed.map { r -> r.copy(lines = fixer.normalizeRoles(r)) }
         val refineMs = (System.nanoTime() - tRefine) / 1_000_000
 
         val textual = regions.count { it.isTextual && it.lines.isNotEmpty() }
@@ -430,6 +439,9 @@ class LayoutPipeline(
 
         /** 页面底色亮度低于它就算深色页，模型输入反相（V2-45）。 */
         const val DARK_LUMA = 110
+
+        /** 少于这么多区域时并行调度本身不值钱（小图/单卡片页）。 */
+        const val PARALLEL_REFINE_MIN_REGIONS = 6
     }
 }
 

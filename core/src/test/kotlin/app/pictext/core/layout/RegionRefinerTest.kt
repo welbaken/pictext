@@ -168,6 +168,25 @@ class RegionRefinerTest {
         assertTrue("行带右缘=${band.right}", abs(band.right - 540) <= 1)
     }
 
+    @Test
+    fun `figure region is refined at the reduced figure resolution`() {
+        val page = whitePage(1080, 400)
+        val rowTops = listOf(60, 100, 140, 180)
+        for (y in rowTops) page.paint(100, y, 900, y + 24, 0)
+
+        // 强制 FIGURE 走 480px 宽（源 ROI 892px，scale ≈0.54），仍然要能切出 4 行。
+        val result = refine(
+            page,
+            RectI(60, 20, 940, 244),
+            kind = RegionKind.FIGURE,
+            options = LayoutOptions(refineFigureMaxWidth = 480, refineFigureMaxPixels = 480 * 480),
+        )
+
+        assertFalse(result.failed)
+        assertEquals(4, result.lineCount)
+        assertTrue("scale 应小于 1（走了半分辨率）", result.medianLineHeight > 0f)
+    }
+
     // ---------------------------------------------------------------------
     // 6. 切点特征
     // ---------------------------------------------------------------------

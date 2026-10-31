@@ -46,6 +46,15 @@ data class LayoutOptions(
     /** 细化 ROI 的最大像素数；超过就降采样（`sqrt(maxPixels / area)`）。 */
     val refineMaxPixels: Int = 2_500_000,
 
+    /** FIGURE/TABLE/OTHER 的细化宽度上限（V2-50）。只判断“里面有没有字”，半分辨率足够。 */
+    val refineFigureMaxWidth: Int = 700,
+
+    /** FIGURE/TABLE/OTHER 的细化像素上限（V2-50），与 [refineFigureMaxWidth] 一起降采样。 */
+    val refineFigureMaxPixels: Int = 625_000,
+
+    /** 区域细化按区域并行（V2-50）。结果顺序由 `collect` 保证，关掉只用于基准对比/排障。 */
+    val parallelRefine: Boolean = true,
+
     /** 行宽 < 该比例 × 区域宽时丢弃（噪声/边框）。 */
     val refineMinLineWidthRatio: Float = 0.10f,
 
@@ -79,6 +88,13 @@ data class LayoutOptions(
      * 默认 256 而不是 64：长图（7539px、8 个 tile、14 张卡片）上，卡片内的小字会被切成
      * 几十个残差块，64 会在“本可以全部补回来”的页面上误触发回退。 */
     val maxResiduals: Int = 256,
+
+    /** 覆盖审计的降采样倍数（V2-50）：2 = 480²→240²，像素数 /4。
+     *
+     * 残差框只需要 ~2 个模型像素的精度（映射回 S 后还会按 `residualDilatePx=8` 合并），
+     * 覆盖率又只是面积比，所以降采样不改变判定口径，只省背景估计 + Otsu 的时间。
+     * 单测传 1（`CoverageAuditor` 构造参数默认值）保证坐标断言仍精确到 1px。 */
+    val auditDownsample: Int = 2,
 
     /** 细化 ROI 内的“细竖直装饰列”宽度上限（相对 ROI 宽）。
      *
@@ -140,6 +156,7 @@ data class LayoutOptions(
         require(modelInput in 64..2048) { "modelInput out of range: $modelInput" }
         require(overlapPx >= 0) { "overlapPx < 0: $overlapPx" }
         require(minScale > 0f && maxScale >= minScale) { "bad scale range $minScale..$maxScale" }
+        require(auditDownsample in 1..4) { "auditDownsample out of range: $auditDownsample" }
     }
 
     /** tile 采样后送模型的边长（与 [modelInput] 相同，保留给测试覆盖动态尺寸）。 */

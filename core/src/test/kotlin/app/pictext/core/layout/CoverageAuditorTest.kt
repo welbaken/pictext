@@ -173,6 +173,36 @@ class CoverageAuditorTest {
     }
 
     /**
+     * V2-50：审计降采样到 240² 后，覆盖率与残差几何必须和全分辨率基本一致。
+     * 容差按“2 个模型像素”给（本用例 S/T 恒等，所以就是 2px）。
+     */
+    @Test
+    fun `downsampled audit keeps coverage and residual geometry`() {
+        val tile = modelTile()
+        val gray = whitePage()
+        val picture = RectI(260, 260, 460, 460)
+        val lines = listOf(
+            RectI(20, 40, 320, 60),
+            RectI(20, 70, 320, 90),
+            RectI(20, 100, 320, 120),
+        )
+        for (line in lines) gray.paint(line)
+        gray.paint(picture)
+
+        val full = CoverageAuditor(downsample = 1).auditTile(gray, tile, listOf(figure(picture)))
+        val half = CoverageAuditor(downsample = 2).auditTile(gray, tile, listOf(figure(picture)))
+
+        assertTrue("coverage full=${full.ratio} half=${half.ratio}", abs(full.ratio - half.ratio) <= 0.01f)
+        assertEquals(full.residuals.size, half.residuals.size)
+        val a = full.residuals.first().bounds
+        val b = half.residuals.first().bounds
+        assertNear(a.left, b.left, 3, "downsampled.left")
+        assertNear(a.top, b.top, 3, "downsampled.top")
+        assertNear(a.right, b.right, 3, "downsampled.right")
+        assertNear(a.bottom, b.bottom, 3, "downsampled.bottom")
+    }
+
+    /**
      * 验收 6（stats 自洽）：report 的 ink/covered/coverage/residualRatio 互相一致，
      * 且等于各 tile 的和。
      */

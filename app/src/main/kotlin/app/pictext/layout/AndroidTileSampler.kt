@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
+import app.pictext.core.layout.GrayPageRegionSampler
 import app.pictext.core.layout.RegionImage
 import app.pictext.core.layout.RegionSampler
 import app.pictext.core.layout.TileSampler
@@ -39,14 +40,27 @@ class AndroidTileSampler(
 
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG).apply { isAntiAlias = false }
     private var page: Bitmap? = null
+    @Volatile
     private var pageSampled = 1
     private var pageTried = false
+
+    /**
+     * 整页灰度缓存（V2-50 第二轮）。
+     *
+     * 细化一次要采 ~20–40 个 ROI。走 `Canvas.drawBitmap + getPixels` 每次都要新建一张
+     * ARGB 位图再逐像素转灰度，实测 1080×2400 上 refine 段 1056ms。把缓存位图**一次**转成
+     * 1 byte/px 的 [GrayImage]（2.6MB），之后 ROI 直接做字节拷贝/缩放，没有 Bitmap 分配。
+     */
+    private var pageGray: GrayImage? = null
+    @Volatile
+    private var pageGraySampler: GrayPageRegionSampler? = null
 
     /**
      * 整页缓存（可能为 null：超长图、解码失败）。
      *
      * `pageSampled` 是缓存位图相对源图的降采样倍数；对外坐标需要除以它。
      */
+    @Synchronized
     private fun pageOrNull(): Bitmap? {
         if (pageTried) return page
         pageTried = true
@@ -93,24 +107,76 @@ class AndroidTileSampler(
         }
         val targetH = max(1, (clipped.height.toFloat() * targetW / clipped.width).roundToInt())
 
+        val cached = pageGraySampler
+        if (cached != null) {
+            return grayFromCached(cached, clipped, maxWidth, maxPixels)
+        }
+        if (pageOrNull() != null) {
+            // 缓存位图先转成整页灰度，ROI 采样就只是字节拷贝 + 双线性缩放。
+            val sampler = graySamplerOrNull() ?: return RegionImage(
+                GrayImage(1, 1, ByteArray(1), 0xFFFFFFFF.toInt()),
+                1f,
+            )
+            return grayFromCached(sampler, clipped, maxWidth, maxPixels)
+        }
+
         val pixels = IntArray(targetW * targetH)
-        val cached = pageOrNull()
-        if (cached == null) {
-            val bitmap = decodeScaled(clipped, targetW, targetH)
-                ?: return RegionImage(GrayImage(1, 1, ByteArray(1), 0xFFFFFFFF.toInt()), 1f)
-            try {
-                bitmap.getPixels(pixels, 0, targetW, 0, 0, targetW, targetH)
-            } finally {
-                bitmap.recycle()
-            }
-        } else {
-            drawFrom(cached, clipped, targetW, targetH, pixels)
+        val bitmap = decodeScaled(clipped, targetW, targetH)
+            ?: return RegionImage(GrayImage(1, 1, ByteArray(1), 0xFFFFFFFF.toInt()), 1f)
+        try {
+            bitmap.getPixels(pixels, 0, targetW, 0, 0, targetW, targetH)
+        } finally {
+            bitmap.recycle()
         }
         val bg = pixels.firstOrNull() ?: 0xFFFFFFFF.toInt()
         return RegionImage(
             Grayscale.fromArgb(targetW, targetH, pixels, bg),
             targetW.toFloat() / clipped.width,
         )
+    }
+
+    /** 从整页灰度缓存里取 ROI；[clipped] 是源坐标。 */
+    private fun grayFromCached(
+        sampler: GrayPageRegionSampler,
+        clipped: RectI,
+        maxWidth: Int,
+        maxPixels: Int,
+    ): RegionImage {
+        val s = pageSampled
+        val local = RectI(
+            clipped.left / s,
+            clipped.top / s,
+            (clipped.right + s - 1) / s,
+            (clipped.bottom + s - 1) / s,
+        )
+        val result = sampler.gray(local, maxWidth, maxPixels)
+        // sampler 的 scale 是“灰度列 / 缓存列”，换回“灰度列 / 源列”。
+        return RegionImage(result.gray, result.scale / s)
+    }
+
+    /** 整页灰度缓存（懒构建）；没有整页缓存时返回 null，调用方退回按需解码。 */
+    @Synchronized
+    private fun graySamplerOrNull(): GrayPageRegionSampler? {
+        pageGraySampler?.let { return it }
+        val bmp = pageOrNull() ?: return null
+        val w = bmp.width
+        val h = bmp.height
+        val data = ByteArray(w * h)
+        val row = IntArray(w)
+        for (y in 0 until h) {
+            bmp.getPixels(row, 0, w, 0, y, w, 1)
+            val base = y * w
+            for (x in 0 until w) {
+                val c = row[x]
+                val r = (c ushr 16) and 0xFF
+                val g = (c ushr 8) and 0xFF
+                val b = c and 0xFF
+                data[base + x] = ((77 * r + 150 * g + 29 * b) shr 8).toByte()
+            }
+        }
+        val gray = GrayImage(w, h, data, 0xFFFFFFFF.toInt())
+        pageGray = gray
+        return GrayPageRegionSampler(gray).also { pageGraySampler = it }
     }
 
     /** 从缓存位图裁 [src] 并缩放到 `outW × outH`，一次 draw 完成，没有中间位图。 */
@@ -155,6 +221,8 @@ class AndroidTileSampler(
     override fun close() {
         page?.recycle()
         page = null
+        pageGray = null
+        pageGraySampler = null
     }
 
     private companion object {

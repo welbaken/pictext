@@ -6,6 +6,7 @@ import app.pictext.core.model.GrayImage
 import app.pictext.core.model.LayoutRegion
 import app.pictext.core.model.RectI
 import app.pictext.core.util.Runs
+import kotlin.math.max
 
 /**
  * 覆盖审计与残差补区（docs/07 §4.6 / V2-22）。
@@ -40,7 +41,21 @@ import app.pictext.core.util.Runs
  *
  * 所以这里只调用既有实现：宁可多一点耦合，也不要第二个“真相源”。
  */
-class CoverageAuditor(private val options: LayoutOptions = LayoutOptions()) {
+class CoverageAuditor(
+    private val options: LayoutOptions = LayoutOptions(),
+    /**
+     * 审计降采样倍数（V2-50）。`1` = 原分辨率（单测用，坐标断言要精确到 1px）；
+     * 生产链路传 [LayoutOptions.auditDownsample]（默认 2 → 480² 变 240²，像素数 /4）。
+     *
+     * 残差框最终还会按 [LayoutOptions.residualDilatePx] 合并、映射回 S，2 个模型像素的
+     * 量化误差（1080 宽时约 4.5 个源像素）远小于膨胀量；覆盖率是面积比，降采样不改变口径。
+     */
+    private val downsample: Int = 1,
+) {
+
+    init {
+        require(downsample in 1..4) { "downsample out of range: $downsample" }
+    }
 
     private val background = BackgroundEstimator()
     private val binarizer = Binarizer()
@@ -79,12 +94,51 @@ class CoverageAuditor(private val options: LayoutOptions = LayoutOptions()) {
         require(tileGray.height == tile.modelInput) {
             "tileGray.height=${tileGray.height} != tile.modelInput=${tile.modelInput}"
         }
-        val n = tile.modelInput
+        // 降采样只影响审计自身（V2-50）：有效区、区域掩膜、残差坐标全部在同一张低分辨率栅格上，
+        // 只有最后的残差框映射回 S 时乘回倍数。像素数 /4，背景估计 + Otsu 是 coverage 段的大头。
+        val auditGray = if (downsample == 1) tileGray else downsampleGray(tileGray, downsample)
+        val n = auditGray.width
         // padding 区是模型输入的一部分（padValue=114，灰度上比纸面暗得多），
         // 它“看起来像墨”但不是页面内容；有效区必须先裁到模型输入之内再统计。
-        val valid = tile.validModelRect().intersect(RectI(0, 0, n, n))
-        val ink = if (valid.isEmpty) BooleanArray(0) else inkMask(tileGray)
+        val validFull = tile.validModelRect().intersect(RectI(0, 0, tile.modelInput, tile.modelInput))
+        val valid = if (downsample == 1) validFull else scaleDown(validFull)
+            .intersect(RectI(0, 0, n, n))
+        val ink = if (valid.isEmpty) BooleanArray(0) else inkMask(auditGray)
         return PreparedTile(tile, valid, n, ink)
+    }
+
+    /** 灰度块平均降采样；保留细笔画的同时避免“抽点”把 1px 字缝抽没。 */
+    private fun downsampleGray(gray: GrayImage, f: Int): GrayImage {
+        val w = max(1, gray.width / f)
+        val h = max(1, gray.height / f)
+        val data = ByteArray(w * h)
+        val area = f * f
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                var sum = 0
+                for (dy in 0 until f) {
+                    val sy = (y * f + dy).coerceAtMost(gray.height - 1)
+                    val base = sy * gray.width
+                    for (dx in 0 until f) {
+                        val sx = (x * f + dx).coerceAtMost(gray.width - 1)
+                        sum += gray.data[base + sx].toInt() and 0xFF
+                    }
+                }
+                data[y * w + x] = (sum / area).toByte()
+            }
+        }
+        return GrayImage(w, h, data, gray.backgroundColor)
+    }
+
+    /** 模型坐标矩形 → 审计栅格（向外取整，确保边缘墨迹不被裁掉）。 */
+    private fun scaleDown(r: RectI): RectI {
+        val f = downsample
+        return RectI(
+            r.left.floorDiv(f),
+            r.top.floorDiv(f),
+            -((-r.right).floorDiv(f)),
+            -((-r.bottom).floorDiv(f)),
+        )
     }
 
     /** 一个 tile 的预计算结果；[audit] 只随区域变化。 */
@@ -191,7 +245,9 @@ class CoverageAuditor(private val options: LayoutOptions = LayoutOptions()) {
     ): BooleanArray {
         val mask = BooleanArray(n * n)
         for (region in regions) {
-            val r = tile.modelRect(region.bounds).intersect(valid)
+            val full = tile.modelRect(region.bounds)
+            val mapped = if (downsample == 1) full else scaleDown(full)
+            val r = mapped.intersect(valid)
             if (r.isEmpty) continue
             for (y in r.top until r.bottom) {
                 java.util.Arrays.fill(mask, y * n + r.left, y * n + r.right, true)
@@ -246,10 +302,10 @@ class CoverageAuditor(private val options: LayoutOptions = LayoutOptions()) {
                 for (xx in cols) count += colInk[xx]
                 if (count < MIN_RESIDUAL_INK) continue
                 val bounds = tile.sourceRect(
-                    (valid.left + cols.first).toFloat(),
-                    (valid.top + band.first).toFloat(),
-                    (valid.left + cols.last + 1).toFloat(),
-                    (valid.top + band.last + 1).toFloat(),
+                    ((valid.left + cols.first) * downsample).toFloat(),
+                    ((valid.top + band.first) * downsample).toFloat(),
+                    ((valid.left + cols.last + 1) * downsample).toFloat(),
+                    ((valid.top + band.last + 1) * downsample).toFloat(),
                     page,
                 )
                 if (bounds.isEmpty) continue

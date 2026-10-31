@@ -387,6 +387,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         val bg = decoded.gray.backgroundColor
         // 采样器持有“整页缓存位图”（V2-40：PNG 的 decodeRegion 每次都要从头解码，24 次细化
         // 就是 24 次整图解码）。分析一结束就释放，别让它跟着 ViewModel 一直占着十几 MB。
+        val peakPss = PeakPss.start()
         val smart = try {
             SmartReflow().run(
                 analysis = decoded.gray,
@@ -404,6 +405,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         } finally {
             sampler?.close()
         }
+        val peakPssMb = peakPss.stop()
         val layout = smart.layout
         val plan = smart.plan
         val analysisMs = (System.nanoTime() - started) / 1_000_000
@@ -415,6 +417,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
         val strips = SourceStripCache(source, viewportWidth.coerceAtLeast(1))
         val renderer = TileRenderer(layout, plan, source, strips)
+        // V2-40：真机验收要看进程峰值内存，Runtime 只覆盖 Java 堆，必须用 Debug.getMemoryInfo
+        // （totalPss 含 native/图形/模型）。采样点放在一页分析+首帧渲染之后，能抓住 ORT 会话峰值。
+        val mem = android.os.Debug.MemoryInfo()
+        android.os.Debug.getMemoryInfo(mem)
         Log.d(
             "PicText",
             "page=$index src=${decoded.srcWidth}x${decoded.srcHeight} analysis=${analysisMs}ms " +
@@ -424,6 +430,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 "split=${layout.splitX} clean=${layout.cleanRatio} scale=${plan.scale} gain=${plan.gain} " +
                 "mode=${plan.mode} fallback=${plan.fallback} " +
                 "auditV2=${smart.layoutAudit?.ok} stages=${smart.layoutStats?.summary?.stageSummary()} " +
+                "pss=${mem.totalPss / 1024}MB javaHeap=${mem.dalvikPrivateDirty / 1024}MB " +
+                "nativeHeap=${mem.nativePrivateDirty / 1024}MB peakPss=${peakPssMb}MB " +
                 "notes=${plan.notes}",
         )
         return DocumentSession(
@@ -576,6 +584,45 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     fun planOf(index: Int): ReflowPlan? = pages.getOrNull(index)?.plan
 
     fun modeOf(index: Int): PlanMode = pages.getOrNull(index)?.mode ?: PlanMode.ORIGINAL
+}
+
+/**
+ * 分析期间的进程 PSS 峰值（V2-40 验收）。
+ *
+ * `Debug.getMemoryInfo` 是 Android 上唯一包含 native（ORT）/图形/模型的进程内存口径；
+ * 单次读末尾会漏掉 ORT 推理峰值，所以用 50ms 守护线程采样取最大值。
+ */
+private class PeakPss private constructor() {
+    @Volatile private var running = true
+    @Volatile private var peak = 0
+    private val thread = Thread {
+        val info = android.os.Debug.MemoryInfo()
+        while (running) {
+            android.os.Debug.getMemoryInfo(info)
+            if (info.totalPss > peak) peak = info.totalPss
+            try {
+                Thread.sleep(50)
+            } catch (_: InterruptedException) {
+                return@Thread
+            }
+        }
+    }.also {
+        it.isDaemon = true
+        it.name = "pictext-peak-pss"
+        it.start()
+    }
+
+    /** @return 峰值 PSS（MB）。 */
+    fun stop(): Int {
+        running = false
+        thread.interrupt()
+        thread.join(200)
+        return peak / 1024
+    }
+
+    companion object {
+        fun start(): PeakPss = PeakPss()
+    }
 }
 
 

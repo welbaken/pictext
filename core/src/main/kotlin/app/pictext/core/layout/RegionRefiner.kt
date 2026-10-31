@@ -109,7 +109,14 @@ class RegionRefiner(
         crop: RectI,
     ): RefineResult {
         // 2. 直接从源图采样；scale 是“采样列 / 源列”，允许 < 1。
-        val img = sampler.gray(crop, options.refineMaxWidth, options.refineMaxPixels)
+        //    图/表/其它区域（V2-50）：只需要判断“里面有没有稳定的文字行”，半分辨率足够，
+        //    1px 字缝本来也不参与这里的判定；文字类区域仍用原分辨率。
+        val blockLevel = region.kind == RegionKind.FIGURE ||
+            region.kind == RegionKind.TABLE ||
+            region.kind == RegionKind.OTHER
+        val maxWidth = if (blockLevel) options.refineFigureMaxWidth else options.refineMaxWidth
+        val maxPixels = if (blockLevel) options.refineFigureMaxPixels else options.refineMaxPixels
+        val img = sampler.gray(crop, maxWidth, maxPixels)
         val w = img.gray.width
         val h = img.gray.height
         val scale = img.scale
