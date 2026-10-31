@@ -1340,7 +1340,7 @@ app/.../ui/viewer/ViewerViewModel.kt（改）
 1. 18 张 + 6 张合成页，v1/v2 A/B；人工评分（可用/勉强/不可用 + 顺序是否正确）；
 2. 目标：v2 可用数 ≥ v1；v1 的 7 张回退里至少 3 张变可用；0 内容丢失；
 3. 更新 README/docs/02/03/05/07；`NOTICE` 加模型与 ORT 许可；“关于”页加一句“本地模型”；
-4. release：R8、ABI、体积；`versionCode 5 / versionName 2.0.0`；
+4. release：R8、ABI、体积；`versionCode 5 / versionName 0.5.0`；
 5. 真机清单：中端/旗舰/低内存各一台。
 
 **验收**

@@ -37,8 +37,10 @@ android {
         applicationId = "app.pictext"
         minSdk = 26
         targetSdk = 35
+        // 版本从 0.5 起：versionCode 保持 5 与 0.5 对齐，也保证能覆盖上一版 2.0.0-beta1
+        // （同 code 可重装）；之后每发一版递增 code，版本名走 0.5.x。
         versionCode = 5
-        versionName = "2.0.0-beta1"
+        versionName = "0.5.0"
         // v2 只随 arm64 发：ORT 的 .so 单 ABI 就 4–6MB（docs/07 §2.6 / 决策 D-V2-1）。
         ndk { abiFilters += "arm64-v8a" }
     }
