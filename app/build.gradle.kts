@@ -37,29 +37,11 @@ android {
         applicationId = "app.pictext"
         minSdk = 26
         targetSdk = 35
-        // 版本从 0.5 起：versionCode 保持 5 与 0.5 对齐，也保证能覆盖上一版 2.0.0-beta1
-        // （同 code 可重装）；之后每发一版递增 code，版本名走 0.5.x。
-        versionCode = 5
+        // 0.5 是 v1-only 包：不再随包带 ONNX Runtime + 4.9MB 模型。
+        // versionCode 6 从上一版 2.0.0-beta1/0.5.0-full（code 5）升级；版本名保持 0.5.0。
+        versionCode = 6
         versionName = "0.5.0"
-        // v2 只随 arm64 发：ORT 的 .so 单 ABI 就 4–6MB（docs/07 §2.6 / 决策 D-V2-1）。
-        ndk { abiFilters += "arm64-v8a" }
     }
-
-    androidResources {
-        // 模型是 4.9MB 的 ONNX；压缩进 APK 后每次启动都要解压一次，直接不压缩。
-        noCompress += "onnx"
-        // `models/` 里还有转换用的来源文件（inference.json/.pdiparams/.yml 等，5.2MB），
-        // 运行时用不到，打包时按文件名忽略掉——这样仓库里只有一份模型，APK 里也只有运行时需要的。
-        ignoreAssetsPatterns += listOf(
-            "*.pdiparams", "*.json", "*.yml", "*.md", "*.txt", "SHA256SUMS",
-        )
-    }
-
-    /**
-     * 模型资产统一放仓库根的 `models/`，不在 `app/src/main/assets` 里再存一份
-     * （docs/07 §10.2）。asset 路径因此是 `doclayout/PP-DocLayout-S.onnx`。
-     */
-    sourceSets["main"].assets.srcDir(rootProject.file("models"))
 
     buildFeatures {
         compose = true
@@ -87,10 +69,6 @@ android {
     }
 
     buildTypes {
-        debug {
-            // 模拟器（本机的 MuMu 是 x86_64）需要这条；release 只留 arm64-v8a。
-            ndk { abiFilters += "x86_64" }
-        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -109,8 +87,6 @@ android {
 
 dependencies {
     implementation(project(":core"))
-    // v2 版面模型：ORT Android（arm64-v8a + debug x86_64）。`:core` 不依赖它。
-    implementation(libs.onnxruntime.android)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

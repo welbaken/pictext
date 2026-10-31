@@ -1340,7 +1340,7 @@ app/.../ui/viewer/ViewerViewModel.kt（改）
 1. 18 张 + 6 张合成页，v1/v2 A/B；人工评分（可用/勉强/不可用 + 顺序是否正确）；
 2. 目标：v2 可用数 ≥ v1；v1 的 7 张回退里至少 3 张变可用；0 内容丢失；
 3. 更新 README/docs/02/03/05/07；`NOTICE` 加模型与 ORT 许可；“关于”页加一句“本地模型”；
-4. release：R8、ABI、体积；`versionCode 5 / versionName 0.5.0`；
+4. release：R8、ABI、体积；`versionCode 6 / versionName 0.5.0`；
 5. 真机清单：中端/旗舰/低内存各一台。
 
 **验收**
@@ -1629,6 +1629,7 @@ testdata/report-v2.md                  # 批量对比
 | V2-49 | RegionRefiner 的“行带贴边 → ROI 再外扩” | 同一张图标题第二行右缘 533 → 538（实际墨迹 537），仍是 DOC_LAYOUT、auditV2=ok |
 | V2-50 | 审计降采样 240²、FIGURE 半分辨率细化、区域并行、Android 整页灰度缓存、CLI/Android 内存采样、`scripts/bench-v2.ps1` | 1080×2400 CLI 977→751ms、1080×20000 2335→2057ms；MuMu 1080×2400 3065→1901ms；**目标仍未达标**（详见 §13.6.5） |
 | V2-51 | `SmartReflow` 取消 v2→v1 回退；App 默认 v1 + 顶栏「强化重排」；设置键改 `enhanced_reflow` | 默认只跑 v1；v2 成功 33/37、失败 4 张显示原图；`SmartReflowTest` 4 例；CLI 报告增加 `v2ok/mode` 列 |
+| V2-52 | **0.5 只发 v1**：App 移除 v2/ORT/模型与强化重排入口；v2 留在 `:core`/`:cli` 做技术验证 | release APK **24.59MB → 1.23MB**（−95%）；版本 0.5.0 / code 6；v1 的 ×4 二次重排保留 |
 | V2-33 | `--compare` 的 `compare.png`、`testdata/notes-v2.csv` | 42 张评分表已建；compare.png 已验证（1128×1371） |
 | V2-41（部分） | 「关于」文案、`keystore.properties.example`、release/安装体积记录、37 张盲评 | release 24.59MB 可构建；安装 23,996KB APK + 7,660KB 数据；盲评 v2 可用 19 vs v1 17，但真实样例 4:8、丢内容 2:0 → **暂不发布**（§13.6.8）；真机待用户 |
 
@@ -2067,6 +2068,11 @@ A/B 字号中位 1.008×，变大 13 / 持平 15 / 变小 3；3 张“变小”�
 **影响**：盲评里 P13/P31/P25 这些问题只会影响打开了「强化重排」的用户；默认路径完全走
 v1，行为与 v1 旧版本一致。v2 仍可继续迭代，不再需要为了“别把 v1 弄坏”而束手束脚。
 
+> **后续决定（V2-52）**：V2-51 的“App 里保留强化重排入口”只存在了一天。盲评结论出来、
+> 用户算完体积账后决定 **0.5 安装包只发 v1**，v2 只作为 `:core`/`:cli` 的技术验证，
+> 不再接进 APK，也不发 full 包。见 §13.6.10。V2-51 的“取消自动回退、默认 v1”结论仍然有效，
+> 只是 App 里不再有 v2 入口。
+
 **实测（2026-10-31 改造后）**：
 
 - 42 张批量：v2 成功 **33/37**（37 = 可解码），失败显示原图 **4** 张：
@@ -2081,6 +2087,38 @@ v1，行为与 v1 旧版本一致。v2 仍可继续迭代，不再需要为了�
 - Android（MuMu）：默认 v1 冷启动 866ms（`strategy=PROJECTION`）；点「强化重排」后
   重跑 1459ms（`DOC_LAYOUT`）；v2 失败页（12-tight）`mode=ORIGINAL`，界面显示提示条，
   UI dump 确认没有 v1 的块/行。
+
+### 13.6.10 V2-52：0.5 只发 v1，v2 转为技术验证（2026-10-31）
+
+**决定**（用户拍板）：盲评真实样例 v1 更好 8:4、v2 内容丢失 2:0；v2 的 23.4MB
+（ORT 17.6MB + JNI 0.87MB + 模型 4.9MB）不值得让所有用户承担。**0.5 安装包只发 v1**，
+v2 不再打安装包，只保留在 `:core` / `:cli` 做技术验证。
+
+**改了什么**
+
+- App 删除 `app/.../layout/{AndroidTileSampler,ModelAssets,OrtLayoutDetector}.kt`；
+  `AppContainer` 不再持有 ORT/模型；`ViewerViewModel` 直接走
+  `LayoutAnalyzer → ReflowPlanner → PlanAuditor`，不再经过 `SmartReflow` 的 v2 分支；
+- `app/build.gradle.kts` 移除 `onnxruntime.android` 依赖、`models/` assets、`noCompress onnx`
+  与 ABI 过滤；`proguard-rules.pro` 移除 ORT keep 规则；
+- 顶栏「强化重排」入口、`AppSettings.enhancedReflow` 与相关字符串全部移除；About 回到
+  “不 OCR、不联网、不上模型”；
+- `:core` / `:cli` 的 v2 代码、`--layout`、`SmartReflowTest`、42 张批量与盲评脚本原样保留，
+  继续能跑技术验证；只是不再进 APK。
+
+**体积**
+
+| 版本 | release APK |
+|---|---|
+| 0.5.0-full（V2-51，带 v2） | 24,588,234 B（23.45 MiB） |
+| **0.5.0-v1（V2-52）** | **1,231,056 B（1.17 MiB）** |
+
+**验证**
+
+- `:app:assembleDebug` / `:app:assembleRelease` 通过；release 签名校验通过；
+- MuMu 覆盖安装成功（`versionCode 6 / versionName 0.5.0`），默认路径
+  `strategy=PROJECTION`、`mode=REFLOW`（01-article-light，332ms）、无「强化重排」入口；
+- `:core:test` 全绿；CLI `--layout` 仍可跑 v2，只是不再打包。
 
 ### 13.7 V2-13 闸门结论（2026-10-30）
 

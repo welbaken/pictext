@@ -6,8 +6,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,14 +13,12 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,9 +36,6 @@ fun ViewerTopBar(
     visible: Boolean,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    /** 强化重排（v2）是否开启；`null` 表示这一版不显示这个开关。 */
-    enhancedReflow: Boolean? = null,
-    onToggleEnhancedReflow: (() -> Unit)? = null,
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -73,46 +66,7 @@ fun ViewerTopBar(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            // 强化重排：默认关，所有图片走 v1；打开后这一页/后续页才用 v2（失败显示原图）。
-            if (enhancedReflow != null && onToggleEnhancedReflow != null) {
-                val stateText = stringResource(
-                    if (enhancedReflow) R.string.enhanced_reflow_on else R.string.enhanced_reflow_off,
-                )
-                TextButton(
-                    onClick = onToggleEnhancedReflow,
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
-                    modifier = Modifier.semantics { contentDescription = stateText },
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            // 固定 4 字标签 + 第二行开/关，窄屏也不会被挤断。
-                            text = stringResource(R.string.enhanced_reflow),
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            softWrap = false,
-                            color = if (enhancedReflow) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            fontWeight = if (enhancedReflow) FontWeight.Bold else FontWeight.Normal,
-                        )
-                        Text(
-                            text = stringResource(
-                                if (enhancedReflow) R.string.enhanced_reflow_state_on
-                                else R.string.enhanced_reflow_state_off,
-                            ),
-                            fontSize = 9.sp,
-                            maxLines = 1,
-                            color = if (enhancedReflow) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
-                    }
-                }
-            }
+            // 0.5 只发 v1，顶栏不再有「强化重排」入口（v2 只在 :core/:cli 做技术验证）。
         }
     }
 }

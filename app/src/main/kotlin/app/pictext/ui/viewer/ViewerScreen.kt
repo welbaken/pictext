@@ -239,11 +239,6 @@ private fun ReadyViewer(
             // 收起后是整屏，点一下正文再唤回来。
             visible = state.showBars,
             onBack = onBack,
-            enhancedReflow = state.settings.enhancedReflow,
-            onToggleEnhancedReflow = {
-                viewModel.setEnhancedReflow(!state.settings.enhancedReflow)
-                viewModel.toggleBars()
-            },
             modifier = Modifier.align(Alignment.TopCenter),
         )
 
@@ -447,6 +442,6 @@ private fun fallbackMessage(reason: FallbackReason, mode: PlanMode?): String? = 
     FallbackReason.TOO_TALL -> stringResource(R.string.fallback_too_tall)
     FallbackReason.MULTI_COLUMN -> stringResource(R.string.fallback_multi_column)
     // v2：模型/版式链路不可用或审计没过，已静默降级到 v1（docs/07 §4.9：回退是无感的）。
-    FallbackReason.LAYOUT_FALLBACK -> stringResource(R.string.fallback_enhanced_failed)
+    FallbackReason.LAYOUT_FALLBACK -> null
     FallbackReason.NONE -> null
 }

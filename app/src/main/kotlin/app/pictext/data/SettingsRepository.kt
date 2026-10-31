@@ -20,13 +20,6 @@ data class AppSettings(
     val targetSp: Float = 16f,
     val splitMode: SplitMode = SplitMode.AUTO,
     val rememberProgress: Boolean = true,
-    /**
-     * 强化重排：打开后才用 v2（模型区域 + 阅读顺序）；默认 false，所有图片走 v1。
-     *
-     * V2-51 起版本由用户显式选择，不再自动判断、也不再把 v2 结果偷偷回退成 v1。
-     * 新键名 `enhanced_reflow`：老 β 开关（`smart_layout`）不再读取，升级后统一回到 v1。
-     */
-    val enhancedReflow: Boolean = false,
 )
 
 private val Context.settingsDataStore by preferencesDataStore(name = "settings")
@@ -38,7 +31,6 @@ class SettingsRepository(private val context: Context) {
         val targetSp = floatPreferencesKey("target_sp")
         val splitMode = stringPreferencesKey("split_mode")
         val rememberProgress = booleanPreferencesKey("remember_progress")
-        val enhancedReflow = booleanPreferencesKey("enhanced_reflow")
     }
 
     val settings: Flow<AppSettings> = context.settingsDataStore.data
@@ -52,7 +44,6 @@ class SettingsRepository(private val context: Context) {
                     SplitMode.valueOf(prefs[Keys.splitMode] ?: SplitMode.AUTO.name)
                 }.getOrDefault(SplitMode.AUTO),
                 rememberProgress = prefs[Keys.rememberProgress] ?: true,
-                enhancedReflow = prefs[Keys.enhancedReflow] ?: false,
             )
         }
 
@@ -66,9 +57,5 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setRememberProgress(remember: Boolean) {
         context.settingsDataStore.edit { it[Keys.rememberProgress] = remember }
-    }
-
-    suspend fun setEnhancedReflow(enabled: Boolean) {
-        context.settingsDataStore.edit { it[Keys.enhancedReflow] = enabled }
     }
 }

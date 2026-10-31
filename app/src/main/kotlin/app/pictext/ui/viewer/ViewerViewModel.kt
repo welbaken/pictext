@@ -11,7 +11,6 @@ import app.pictext.core.model.PlanMode
 import app.pictext.core.model.ReflowPlan
 import app.pictext.core.plan.ReflowOptions
 import app.pictext.core.plan.ReflowPlanner
-import app.pictext.core.plan.SmartReflow
 import app.pictext.data.AppSettings
 import app.pictext.data.SplitMode
 import app.pictext.image.BitmapDecoder
@@ -19,8 +18,6 @@ import app.pictext.image.DecodeException
 import app.pictext.image.FailureKind
 import app.pictext.image.SourceImage
 import app.pictext.image.SourceStripCache
-import app.pictext.layout.AndroidTileSampler
-import app.pictext.core.layout.PageContext
 import app.pictext.render.TileRenderer
 import app.pictext.session.DocumentSession
 import kotlinx.coroutines.CancellationException
@@ -92,15 +89,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     updateReadySettings()
                     return@collect
                 }
-                if (old.enhancedReflow != newSettings.enhancedReflow) {
-                    Log.d(
-                        TAG,
-                        "settings: enhancedReflow ${old.enhancedReflow}->${newSettings.enhancedReflow} " +
-                            "entries=${entries.size}",
-                    )
-                    // 强化重排切换的是“整条分析链路”，不能只重新规划。
-                    reanalyzeAll()
-                } else if (old.targetSp != newSettings.targetSp ||
+                if (old.targetSp != newSettings.targetSp ||
                     old.splitMode != newSettings.splitMode
                 ) {
                     replanAll()
@@ -256,14 +245,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { runCatching { container.settings.setRememberProgress(remember) } }
     }
 
-    /** 打开/关闭「强化重排」：关闭=只走 v1，打开=只走 v2。改的是分析链路，会重跑全部页面。 */
-    fun setEnhancedReflow(enabled: Boolean) {
-        viewModelScope.launch { runCatching { container.settings.setEnhancedReflow(enabled) } }
-    }
-
-    /** 当前是否已启用强化重排（设置项 + 模型可用性都要满足才真正生效）。 */
-    fun enhancedReflowEnabled(): Boolean = settings.enhancedReflow && container.layoutModelReady()
-
     fun setBarsVisible(visible: Boolean) {
         val ready = _state.value as? ViewerUiState.Ready ?: return
         if (ready.showBars == visible) return
@@ -383,36 +364,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         val source = SourceImage(file)
         val opts = options()
 
-        // v2：模型区域 + 阅读顺序；模型不可用 / 审计失败 / 竖排都会自动回退到 v1，
-        // 回退是无感的（docs/07 §4.9），所以这里不需要 try/catch 兜底模型异常。
-        // v2 只在用户显式打开「强化重排」时启用；默认 null → 只跑 v1。
-        val detector = if (settings.enhancedReflow) container.layoutDetector() else null
-        Log.d(TAG, "session[$index]: detector=${detector != null}")
-        val sampler = if (detector != null) AndroidTileSampler(source) else null
-        val bg = decoded.gray.backgroundColor
-        // 采样器持有“整页缓存位图”（V2-40：PNG 的 decodeRegion 每次都要从头解码，24 次细化
-        // 就是 24 次整图解码）。分析一结束就释放，别让它跟着 ViewModel 一直占着十几 MB。
+        // 0.5 只发 v1：全页投影 + 原规划器。v2 仍留在 :core/:cli 做技术验证，不进 APK。
         val peakPss = PeakPss.start()
-        val smart = try {
-            SmartReflow().run(
-                analysis = decoded.gray,
-                page = PageContext(
-                    srcWidth = decoded.srcWidth,
-                    srcHeight = decoded.srcHeight,
-                    backgroundColor = bg,
-                    isDark = luminance(bg) < 110,
-                ),
-                planOptions = opts,
-                sampler = sampler,
-                regionSampler = sampler,
-                detector = detector,
-            )
-        } finally {
-            sampler?.close()
-        }
+        val layout = app.pictext.core.analyze.LayoutAnalyzer().analyze(
+            decoded.gray,
+            decoded.srcWidth,
+            decoded.srcHeight,
+        )
+        val plan = ReflowPlanner().plan(layout, opts)
+        val audit = app.pictext.core.plan.PlanAuditor.audit(layout, plan)
         val peakPssMb = peakPss.stop()
-        val layout = smart.layout
-        val plan = smart.plan
         val analysisMs = (System.nanoTime() - started) / 1_000_000
 
         // 分享进入的第一页：按自动判断的结果决定初始档位（原图 or ×2），之后才由用户手动切换。
@@ -422,20 +383,16 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
         val strips = SourceStripCache(source, viewportWidth.coerceAtLeast(1))
         val renderer = TileRenderer(layout, plan, source, strips)
-        // V2-40：真机验收要看进程峰值内存，Runtime 只覆盖 Java 堆，必须用 Debug.getMemoryInfo
-        // （totalPss 含 native/图形/模型）。采样点放在一页分析+首帧渲染之后，能抓住 ORT 会话峰值。
         val mem = android.os.Debug.MemoryInfo()
         android.os.Debug.getMemoryInfo(mem)
         Log.d(
             "PicText",
             "page=$index src=${decoded.srcWidth}x${decoded.srcHeight} analysis=${analysisMs}ms " +
-                "strategy=${layout.strategy} v2=${smart.fallbackCode ?: "none"} " +
-                "regions=${layout.regions.size} lines=${layout.regionLines().size} " +
+                "strategy=${layout.strategy} lines=${layout.textLines().size} " +
                 "figures=${layout.blocks.count { it is app.pictext.core.model.Block.Figure }} " +
                 "split=${layout.splitX} clean=${layout.cleanRatio} scale=${plan.scale} gain=${plan.gain} " +
                 "mode=${plan.mode} fallback=${plan.fallback} " +
-                "auditV2=${smart.layoutAudit?.ok} stages=${smart.layoutStats?.summary?.stageSummary()} " +
-                "pss=${mem.totalPss / 1024}MB javaHeap=${mem.dalvikPrivateDirty / 1024}MB " +
+                "audit=${audit.ok} pss=${mem.totalPss / 1024}MB javaHeap=${mem.dalvikPrivateDirty / 1024}MB " +
                 "nativeHeap=${mem.nativePrivateDirty / 1024}MB peakPss=${peakPssMb}MB " +
                 "notes=${plan.notes}",
         )
@@ -448,13 +405,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             plan = plan,
             renderer = renderer,
         ).also { it.multiplier = opts.scaleMultiplier }
-    }
-
-    private fun luminance(argb: Int): Int {
-        val r = (argb ushr 16) and 0xFF
-        val g = (argb ushr 8) and 0xFF
-        val b = argb and 0xFF
-        return (77 * r + 150 * g + 29 * b) shr 8
     }
 
     /**
