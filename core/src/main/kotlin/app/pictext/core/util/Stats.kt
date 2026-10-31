@@ -1,7 +1,5 @@
 package app.pictext.core.util
 
-import kotlin.math.roundToInt
-
 /** 小规模统计工具，全部基于整数直方图，避免像素循环里的对象分配。 */
 object Stats {
     /** 中位数；空数组返回 [fallback]。 */
@@ -74,21 +72,4 @@ object Stats {
         for (b in values) out[b.toInt() and 0xFF]++
         return out
     }
-
-    /** 计数排序取块内中位数；[values] 为 0..255。 */
-    fun medianByte(values: ByteArray, count: Int): Int {
-        if (count <= 0) return 0
-        val h = IntArray(256)
-        for (i in 0 until count) h[values[i].toInt() and 0xFF]++
-        val target = (count + 1) / 2
-        var acc = 0
-        for (v in 0..255) {
-            acc += h[v]
-            if (acc >= target) return v
-        }
-        return 255
-    }
-
-    fun roundToIntClamped(v: Float, lo: Int, hi: Int): Int =
-        if (v.isNaN()) lo else v.roundToInt().coerceIn(lo, hi)
 }

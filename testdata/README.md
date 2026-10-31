@@ -52,12 +52,26 @@ powershell -ExecutionPolicy Bypass -File scripts/test-samples.ps1
 powershell -ExecutionPolicy Bypass -File scripts/score-samples.ps1
 ```
 
+`test-samples.ps1` 会跑目录里的**每一张**图（不再按文件名点名），产物全部在 `testdata/out/`：
+
+| 产物 | 内容 |
+|---|---|
+| `<slug>/after.png` / `debug.png` / `plan.json` | 单张输出、分析可视化、全部结构值 |
+| `manifest.json` | 机读汇总（每张的模式/回退/耗时/审计） |
+| `summary.md` | 人读表格（模式、回退原因、行数、scale/gain、耗时、审计） |
+| `index.html` | 逐张前/后对比，浏览器打开最直观 |
+| `contact-sheet.png` | 所有输出的缩略总览（5 列） |
+
+`testdata/` 下**只有文档与 HTML 夹具入库**：`samples*/`、`private*/`、`out*/`、`tmp*/` 全部被
+`.gitignore` 的通配规则挡掉，本机怎么跑都不会误提交。
+
 **跳过规则（0.5.2 起）**：目录不存在 → 整类测试跳过（CI 没样例也不该红）；
 目录存在 → 里面每一张都必须通过不变量检查，**单个文件缺失或不合规是失败，不再静默跳过**。
 唯一按文件名依赖的是长图回归 `006v119zgy1iik2r1f4z0j30j67y9npf.jpg`（690×10305），
 它的断言是"必须回退原图"，样例被删掉时该用例会失败并提示补文件。
-`ImageIO` 读不了的格式（当前 JDK 没有 webp 插件）只打印并计入跳过——真机走 `BitmapFactory`，
-格式支持面更宽。
+`ImageIO` 读不了的格式只打印并计入跳过——真机走 `BitmapFactory`，格式支持面更宽。
+本机这批 30 张里有 **5 张其实是 WebP**（3 个 `.webp` + `image.jpg` / `image (1).jpg` 两个只改了扩展名），
+所以 `:core:test` 的真实图回归实际只覆盖 25 张；批量脚本会先用 ffmpeg 转 PNG 再跑。
 
 ## 3. 历史报告
 

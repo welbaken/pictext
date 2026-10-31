@@ -392,11 +392,6 @@ class LayoutPipeline(
         return TrustSignal(textAreaRatio, inkInTextRatio, blockLineRatio, emptyTextRegionRatio)
     }
 
-    private fun coverageOf(
-        tileGrays: List<Pair<Tile, GrayImage>>,
-        regions: List<LayoutRegion>,
-    ): CoverageReport = auditor.report(tileGrays.map { (tile, gray) -> auditor.auditTile(gray, tile, regions) })
-
     /**
      * 预计算每个 tile 的墨迹掩膜（V2-40）：管线里要审计两次（补区前 / 补区后），
      * 背景估计 + Otsu 只做一次。

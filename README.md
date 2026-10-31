@@ -132,8 +132,10 @@ App 侧无需任何开关。见 [03 §14.2](docs/03-architecture.md)。
 
 Windows 下可用 `scripts\verify.ps1` 一次跑完单测与 debug 构建；
 `scripts\verify-v1-only.ps1` 单独跑发行版门禁（`-SkipBuild` 只检查现有产物）；
-`scripts\test-samples.ps1` 会用 `testdata/private/samples/`（缺失时回退 `testdata/samples/`）的真实截图跑 CLI，
-结果写到 `testdata/out/`（样例缺失时自动跳过）；
+`scripts\test-samples.ps1` 会把 `testdata/private/samples/`（缺失时回退 `testdata/samples/`）里的**每一张**
+图跑一遍 CLI，产物全部落在 `testdata/out/`（gitignored）：`<slug>/{after.png,debug.png,plan.json}`、
+`manifest.json`、`summary.md`、`index.html`（前/后对比，浏览器打开）、`contact-sheet.png`（缩略总览）。
+扩展名骗人的 WebP 会先用 ffmpeg 转 PNG；样例目录缺失时脚本直接报错而不是静默跳过。
 `scripts\score-samples.ps1` 批量跑 `testdata/private/samples2/`（或 `testdata/samples2/`）里的样例并生成 `testdata/scoreboard.md`
 （人工评分写在同目录 `notes.csv` 里，`-SkipRun` 可只重算表格）。真实截图不随仓库分发，见 [testdata/README.md](testdata/README.md)。
 v2 的 HTML 版面夹具用 `node scripts\render-layout-fixtures.mjs` 重渲染（Edge/Chrome headless，零 npm 依赖），
@@ -149,7 +151,7 @@ CLI 输出：
 `--x4` 用 ×4 档的二次重排出图（字号 ×2、放不下的行再切 2/4 段，和 App 里点 ×4 一致）；
 `--dump-lines` 打印每条文字行的 band / cutX / split / cuts，调切点时用。
 `--args="summary out.png a.png b.png"` 可以把多张 after 拼成一张复核图；`scripts\test-samples.ps1`
-会用它生成 `testdata/out/summary.png`，并同时写出 `manifest.json` 与由 `plan.json` 生成的 `testdata/report.md`。
+会用它批量出图，并同时写出 `manifest.json`、`summary.md`、`index.html` 与 `contact-sheet.png`。
 
 `core/src/test/resources/golden/` 下的 `main/dark/photo` 三张图来自
 `prototype/out/`，`GoldenTest` 直接与原型统计值对拍（容差 ±1px / ±0.02 scale）。

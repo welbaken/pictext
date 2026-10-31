@@ -16,9 +16,6 @@ class LayoutPreprocessor(
     private val contract: ModelContract = ModelContract(),
 ) {
 
-    /** 有效区（去掉 padding 后）的边长；测试用它断言“同一 tile 重复采样结果一致”。 */
-    fun validSize(tile: Tile): Int = tile.innerWidth * tile.innerHeight
-
     /**
      * @param argb 采样结果，长度必须 ≥ `width × height`。
      * @param width/height tile 的源尺寸（= `tile.src.width/height`）。
@@ -103,23 +100,5 @@ class LayoutPreprocessor(
         val top = p00 + (p10 - p00) * tx
         val bottom = p01 + (p11 - p01) * tx
         return top + (bottom - top) * ty
-    }
-
-    companion object {
-        /** 反向公式：模型坐标 → tile 源像素坐标，供调试叠加。 */
-        fun modelToTile(tile: Tile, modelX: Int, modelY: Int, width: Int, height: Int): FloatArray {
-            val x = (modelX - tile.padX + 0.5f) * width / tile.innerWidth - 0.5f
-            val y = (modelY - tile.padY + 0.5f) * height / tile.innerHeight - 0.5f
-            return floatArrayOf(x, y)
-        }
-
-        /** 归一化值的逆变换，用于把构建出来的输入还原成灰度（覆盖审计/调试）。 */
-        fun denormalizeGray(contract: ModelContract, r: Float, g: Float, b: Float): Int {
-            val rr = (r * contract.std[0] + contract.mean[0]) * 255f
-            val gg = (g * contract.std[1] + contract.mean[1]) * 255f
-            val bb = (b * contract.std[2] + contract.mean[2]) * 255f
-            val y = (77 * rr + 150 * gg + 29 * bb) / 256f
-            return y.roundToInt().coerceIn(0, 255)
-        }
     }
 }

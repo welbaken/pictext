@@ -74,11 +74,6 @@ data class LayoutRegion(
     val isBlockLevel: Boolean get() = kind == RegionKind.FIGURE || kind == RegionKind.TABLE ||
         kind == RegionKind.OTHER
 
-    /** 区域内文字行的外接框；无行时退回 [bounds]。 */
-    fun inkBounds(): RectI = lines.fold(RectI.EMPTY) { acc, l -> acc.union(l.band) }
-
-    fun withBounds(r: RectI): LayoutRegion = copy(bounds = r)
-
     fun withLines(ls: List<TextLine>): LayoutRegion = copy(
         lines = ls,
         bounds = if (ls.isEmpty()) bounds else ls.fold(bounds) { acc, l -> acc.union(l.band) },

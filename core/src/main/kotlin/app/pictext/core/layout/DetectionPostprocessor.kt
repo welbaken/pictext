@@ -43,10 +43,4 @@ class DetectionPostprocessor(
         }
         return Nms.suppress(out, options.nmsIou)
     }
-
-    /** 便捷入口：一次处理多个 tile 的输出（每个 tile 内部各自 NMS），不做跨 tile 去重。 */
-    fun postprocessAll(
-        results: List<Pair<Tile, List<Detection>>>,
-        page: RectI,
-    ): List<MappedDetection> = results.flatMap { (tile, dets) -> postprocess(tile, dets, page) }
 }

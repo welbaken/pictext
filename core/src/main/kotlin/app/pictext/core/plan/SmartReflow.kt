@@ -35,16 +35,16 @@ data class SmartReflowResult(
 )
 
 /**
- * 两档**手动**选择：用户不开「强化重排」→ 只跑 v1；开了 → 只跑 v2（失败显示原图）。
+ * v2 实验链路的编排：**只有 `:cli` 用，App 不引用**（0.5 发行版是 v1-only，见 docs/03 §14.2）。
  *
  * ```text
- * 强化重排关 → LayoutAnalyzer + ReflowPlanner v1
- * 强化重排开 → LayoutPipeline（区域/顺序/细化/覆盖审计）→ ReflowPlanner v2 → LayoutAuditor
- *             任一失败 → ORIGINAL（不回退 v1，避免“我明明开着强化重排，结果拿到 v1”）
+ * 不给检测器   → LayoutAnalyzer + ReflowPlanner v1
+ * 给检测器     → LayoutPipeline（区域/顺序/细化/覆盖审计）→ ReflowPlannerV2 → LayoutAuditor
+ *                任一失败 → ORIGINAL（不回退 v1，避免“明明走 v2 却拿到 v1”）
  * ```
  *
- * **不再做 v2→v1 的自动回退**，也不再根据页面内容自动判断用哪一版（V2-51）：
- * 版本由用户显式选择；v2 失败时给原图 + 诊断码，比静默换成另一套排版可预期。
+ * **不做 v2→v1 的自动回退**，也不根据页面内容自动选版本（V2-51 的结论）：
+ * 走哪条路由调用方显式决定；v2 失败时给原图 + 诊断码，比静默换成另一套排版可预期。
  *
  * 这个类是**纯 Kotlin**：检测器/采样器都是接口，所以 core 的单测可以用假检测器跑完整链路，
  * 不需要 native 库（docs/07 §2.9g）。
@@ -108,13 +108,6 @@ class SmartReflow(
             }
         }
     }
-
-    /** 只用 v1 的入口（用户没开强化重排 / 单测）。 */
-    fun runProjectionOnly(
-        analysis: GrayImage,
-        page: PageContext,
-        planOptions: ReflowOptions,
-    ): SmartReflowResult = projectionPath(analysis, page, planOptions)
 
     private fun projectionPath(
         analysis: GrayImage,

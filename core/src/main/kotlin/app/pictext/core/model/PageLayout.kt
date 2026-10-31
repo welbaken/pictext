@@ -147,10 +147,6 @@ data class PageLayout(
     /** v2：按阅读顺序展开所有区域内的文字行。 */
     fun regionLines(): List<TextLine> = regions.sortedBy { it.order }.flatMap { it.lines }
 
-    /** v2：每个语义类别的区域数。 */
-    fun regionKindCounts(): Map<RegionKind, Int> =
-        regions.groupingBy { it.kind }.eachCount()
-
     /** v2：所有文字行的行高中位数（BODY 优先，没有 BODY 时退回全部文字行）。 */
     fun bodyMedianLineHeight(): Float {
         val all = regionLines()

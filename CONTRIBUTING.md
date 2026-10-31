@@ -61,7 +61,8 @@ powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -Release # 追加发
 - 一个 PR 只做一件事；算法改动请附 before/after 截图或 `plan.json` diff；
 - 不新增未在 PR 里说明的依赖；`:core` 不允许 import `android.*` 或 native 库；
 - 新增逻辑要有单测；UI 改动要写清手测路径；
-- 不提交 `testdata/private/`、`testdata/out*/`、`keystore.properties`、`*.jks`。
+- 不提交 `testdata/private*/`、`testdata/samples*/`、`testdata/out*/`、`keystore.properties`、`*.jks`
+  （前四类都被 `.gitignore` 的通配规则挡住；样例与产物只在本机）。
 
 ## 提交信息
 

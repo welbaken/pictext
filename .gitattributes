@@ -1,0 +1,5 @@
+# 行尾策略：只约束必须固定的类型，其余交给 core.autocrlf。
+# 以前没有这个文件，scripts/verify.sh 是以 CRLF 存进仓库的，
+# 在 Linux/macOS 上 checkout 后 shebang 会变成 `#!/usr/bin/env bash\r`，直接跑不了。
+*.sh text eol=lf
+*.bat text eol=crlf

@@ -41,13 +41,9 @@ class ModelLabels(private val labels: List<String> = LABELS) {
 
     private val kindById: Array<RegionKind> = Array(labels.size) { kindOf(labels[it]) }
 
-    private val roleById: Array<LineRole?> = Array(labels.size) { roleOf(kindById[it]) }
-
     fun labelOf(id: Int): String = labels.getOrNull(id) ?: "unknown_$id"
 
     fun kindOfId(id: Int): RegionKind = kindById.getOrNull(id) ?: RegionKind.OTHER
-
-    fun roleOfId(id: Int): LineRole? = roleById.getOrNull(id)
 
     /** 该 id 是否在标签表内（未知 id 不崩，但要能被统计出来）。 */
     fun isKnown(id: Int): Boolean = id in labels.indices

@@ -12,15 +12,13 @@ keystore.properties
 *.keystore
 dist/*.apk
 # 生成物（本地复现用，不入库）
-testdata/out/
-testdata/out2/
-testdata/tmp/
-# 真实截图：版权/隐私原因只在本机保留，不随仓库分发
-testdata/private/
-testdata/samples/
-testdata/samples2/
-testdata/samples_mark/
-testdata/samples_ui/
+testdata/out*/
+testdata/tmp*/
+# 真实截图与派生结果：版权/隐私原因只在本机保留，不随仓库分发
+# 用通配符而不是逐个目录名：samples/samples2/samples_mark/samples_ui/private…
+# 以及任何新起的批次目录（samples_2026XX 之类）都自动被忽略。
+testdata/private*/
+testdata/samples*/
 *.log
 *.idsig
 

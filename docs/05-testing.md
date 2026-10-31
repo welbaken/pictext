@@ -70,8 +70,11 @@ fun `深色图块不会被当成背景`() {
 目录存在时任何一张违反不变量都算失败。早期版本按名字找 `twitter/news_jp/xerj/arknights`，
 样板改名后 6/7 个用例都在静默跳过，这条安全网实际等于不存在——不要再退回那个写法。
 
-`ImageIO` 读不了的格式（当前 JDK 没有 webp 插件）只打印并计入跳过，不算失败；真机走
-`BitmapFactory`，格式支持面更宽。每次运行都会打印一行
+`ImageIO` 读不了的格式只打印并计入跳过，不算失败；真机走 `BitmapFactory`，格式支持面更宽。
+本机这批 30 张里有 **5 张其实是 WebP**（3 个 `.webp`，外加 `image.jpg` / `image (1).jpg` 两个
+只改了扩展名的），所以这条回归实际只覆盖 25 张；批量复核用 `scripts/test-samples.ps1`
+（ffmpeg 先转 PNG），产物是 `testdata/out/` 下的 `index.html` / `summary.md` / `contact-sheet.png`。
+每次运行都会打印一行
 `sample=… lines=… figures=… roles=… audit=[…]` 和汇总 `samples: 重排 N / M`，可直接贴进报告。
 
 ## 2b-2. 渲染几何（core 侧，纯函数）
