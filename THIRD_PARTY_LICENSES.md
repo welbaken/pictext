@@ -3,6 +3,9 @@
 本项目自身以 **Apache-2.0** 发布（见 [LICENSE](LICENSE)）。下面是随项目分发或运行时会用到的第三方组件。
 本文件不是法律意见；正式分发前请按实际依赖清单复核。
 
+> **0.5 起的发行口径**：Android APK 是 v1-only，**不含** ONNX Runtime 与 PP-DocLayout-S；
+> 这两样仍随**仓库**分发、只给 `:cli` 的技术验证用（`scripts/verify-v1-only.ps1` 对产物做机检）。
+
 ## 运行时依赖
 
 | 组件 | 版本 | 许可证 | 用途 |

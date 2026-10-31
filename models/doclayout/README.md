@@ -3,6 +3,10 @@
 版面区域检测模型。**只负责“这是什么区域、大致在哪”**；阅读顺序、行切点、字号一律由
 `core/` 的投影链路计算（docs/07 §0、§12）。
 
+> **0.5 起不随 APK 分发**：App 只跑 v1，release 里没有 ORT、没有模型、没有「强化重排」入口。
+> 这个目录给 `:cli` 的技术验证用（`--layout` / `--detections`），并由
+> `scripts/verify-v1-only.ps1` 保证它不会混进发行包。
+
 ## 来源
 
 | 项 | 值 |
@@ -53,11 +57,12 @@ models/doclayout/
 ## 使用约束
 
 1. `:core` 只依赖 `ModelContract` / `LayoutDetector` 接口，**不加载 native 库**；
-   ORT 适配器只能在 `:app`（Android）或 `:cli`（桌面）。
+   ORT 适配器只存在于 `:cli`（桌面）。**不要**再往 `:app` 里加 ORT 依赖——0.5 的发行口径是 v1-only。
 2. 模型只提供 ROI：渲染位置必须来自细化后的 `TextLine.band`，**禁止**用模型框直接裁像素
    （480 输入到 1080 页面的量化误差有 18–144px，会切字、切图）。
 3. 漏检不丢内容：任何改动都要保住覆盖审计（`CoverageAuditor`）与残差补区。
-4. 模型文件统一放 `models/`，App 通过 `assets.srcDir` 引用，不要在 `app/src/main/assets` 里再放一份。
+4. 模型文件统一放 `models/`；CLI 直接读这里，没有 `assets` 打包环节。
+   若将来产品侧重新接入，用 `assets.srcDir` 引用本目录，不要在 `app/src/main/assets` 里再放一份。
 
 ## 复现
 

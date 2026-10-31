@@ -44,8 +44,8 @@ ORT + 模型（docs/07 §13.6.10）。v1.2 的 ×4 二次重排改进保留。
 | D2 | **默认左右两栏（K=2）**，切点逐行吸附到"字缝"，不是几何中点 | 中点极可能劈开一个汉字；中文每 15~25px 必有字缝，逐行找缝的代价很低 |
 | D3 | **非文字块整体放大、绝不切分**，宽度最多放到栏宽 | 图表被切开就失去意义；宁可排版难看，不可丢内容 |
 | D4 | **不做"一整张重排长图"**，改为按需瓦片渲染 + `LazyColumn` 虚拟化 | 1080×20000 的 ARGB 位图约 86MB，必然 OOM；虚拟化后峰值 < 40MB |
-| D5 | **收益门槛**：`gain = scale × 源宽 / 屏宽 ≥ 1.25` 才重排，否则直接看原图 | 窄图本来就被放大显示，再切只会字更小、文章更长 |
-| D6 | **分享进入（ACTION_SEND）+ 零权限**，导出走 SAF | 场景就是"从别的 App 分享过来"；不申请存储权限，也不申请网络权限 |
+| D5 | **收益门槛**：`gain = bodyScale × k × 源宽 / 屏宽 ≥ 1.25`（`k` = 分析图缩放）才重排，否则直接看原图 | 窄图本来就被放大显示，再切只会字更小、文章更长；漏掉 `k` 会让长图的 gain 虚高（0.5.1 修过） |
+| D6 | **分享进入（ACTION_SEND）+ 零权限**；导出计划走 SAF（**P1，未实现**） | 场景就是"从别的 App 分享过来"；不申请存储权限，也不申请网络权限 |
 
 还有一条产品层面的判断：
 
@@ -59,7 +59,7 @@ ORT + 模型（docs/07 §13.6.10）。v1.2 的 ×4 二次重排改进保留。
 | 文档 | 内容 | 谁该读 |
 |------|------|--------|
 | [00 概览](docs/00-overview.md) | 问题量化、方案全貌、成功标准、与替代方案对比 | 所有人，先读这个 |
-| [01 产品与交互](docs/01-product.md) | 用户场景、页面线框、状态机、文案、手势、设置 | 做 UI 的 agent |
+| [01 产品与交互](docs/01-product.md) | 用户场景、页面线框、状态机、文案、手势、三档切换 | 做 UI 的 agent |
 | [02 算法](docs/02-algorithm.md) | 10 步流水线、全部参数、伪代码、失败回退、原型实测 | 做 core 的 agent |
 | [03 架构](docs/03-architecture.md) | 模块划分、文件清单、Kotlin 接口、渲染与内存、权限 | 所有人 |
 | [04 实施计划](docs/04-plan.md) | M0–M5 里程碑、20 张任务卡、验收标准、并行边界 | 项目负责人 / agent |
@@ -134,7 +134,7 @@ Windows 下可用 `scripts\verify.ps1` 一次跑完单测与 debug 构建；
 `scripts\verify-v1-only.ps1` 单独跑发行版门禁（`-SkipBuild` 只检查现有产物）；
 `scripts\test-samples.ps1` 会用 `testdata/private/samples/`（缺失时回退 `testdata/samples/`）的真实截图跑 CLI，
 结果写到 `testdata/out/`（样例缺失时自动跳过）；
-`scripts\score-samples.ps1` 批量跑 `testdata/private/samples2/`（或 `testdata/samples2/`）的 18 张样例并生成 `testdata/scoreboard.md`
+`scripts\score-samples.ps1` 批量跑 `testdata/private/samples2/`（或 `testdata/samples2/`）里的样例并生成 `testdata/scoreboard.md`
 （人工评分写在同目录 `notes.csv` 里，`-SkipRun` 可只重算表格）。真实截图不随仓库分发，见 [testdata/README.md](testdata/README.md)。
 v2 的 HTML 版面夹具用 `node scripts\render-layout-fixtures.mjs` 重渲染（Edge/Chrome headless，零 npm 依赖），
 `--check` 只校验入库的 PNG 与 DOM 真值；夹具说明见 [07 · §4.11](docs/07-v2-plan.md#411-html-测试夹具与-dom-真值本地生成)。

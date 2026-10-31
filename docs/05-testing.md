@@ -109,18 +109,29 @@ LRU 回收）、`BitmapDecoder`（EXIF / 条带解码）——这些需要 Andro
 
 ### 3.1 fixture 集
 
-| 名称 | 生成方式 | 断言重点 |
-|---|---|---|
-| `plain` | Java2D：22px 中文 30 行 | 行数 28–32、`cleanRatio=1.0`、`scale 1.9–2.1` |
-| `figures` | 正文 + 柱状图 + 照片块 | `figures=2`、正文行 ≥ 15、图块不参与切分 |
-| `dark` | 同上，深底浅字 | `isDark=true`，其余与 `plain` 同 |
-| `caption` | 正文 + 17px 浅灰图注 | 图注行存在（防"相对阈值丢小字"回归） |
-| `title` | 34px 标题 + 正文 | 标题 `split=false` |
-| `no_text` | 900×1200 纯图片 | `mode=ORIGINAL`、`fallback=NO_TEXT` |
-| `narrow` | 600 宽 40px 字 | `fallback=GAIN_TOO_SMALL` |
-| `garbage` | 1×1、纯色、随机噪声 | 不崩，必回退 |
+入库的黄金图只有 **3 张**（`core/src/test/resources/golden/`，来自 `prototype/out/`），
+`GoldenTest` 直接对结构数值做区间断言：
 
-生成器放 `core/src/test/.../SyntheticPage.kt`，用 `BufferedImage` + `Font("Microsoft YaHei", ...)` 或打包一个 1.5MB 的开源中文字体子集（**注意许可证**，推荐 Noto Sans SC 子集，OFL）。
+| 名称 | 内容 | 断言重点 |
+|---|---|---|
+| `main` | 1080×1540 合成页：正文 + 柱状图 + 照片 | 行数 21±2、图块 2±1、`splitX=543±3`、`cleanRatio≥0.9`、`scale=1.993±0.05`、`items=37±2` |
+| `dark` | 同构的深底浅字 | `isDark=true`、行数 21±2、`scale>1.8` |
+| `photo` | 纯图片（无文字） | 文字行 0、`ORIGINAL / NO_TEXT`、无渲染项 |
+
+其余场景不靠"多生成 5 张图"，而是用**程序化小图**在单测里断言具体数值
+（`TestSupport.kt` 的 `grayPage` / `drawGlyphRow` / `grayFromMask`）：
+
+| 场景 | 用例 |
+|---|---|
+| 行带/合并护栏/装饰列/带内竖切 | `RowSegmenterTest`、`RowStructureTest`、`BandSplitTest` |
+| 角色分类（BODY/HEADING/CAPTION/UI） | `LineRoleTest`、`BlockClassifierTest` |
+| 切分门/劈词/加权评分 | `ColumnSplitterTest`、`SplitGateTest`、`LatinSplitTest`、`CutScoringTest` |
+| 超大输入必回退 | `ChaosTest`（1×1、纯色、随机噪声、0 尺寸） |
+| 条带合并与单遍一致 | `StripAnalysisTest` |
+| 长图内存 | `LongPageMemoryTest`（见 §1） |
+
+> 以前这里列过 8 张"计划要生成"的图（`plain/figures/caption/title/no_text/narrow/garbage`），
+> 生成器 `SyntheticPage.kt` 一直没写；实际只有 3 张黄金图 + 程序化单测。别再按旧表找文件。
 
 ### 3.2 断言格式
 
@@ -194,12 +205,14 @@ LRU 回收）、`BitmapDecoder`（EXIF / 条带解码）——这些需要 Andro
 | 改字号后首屏 | < 250ms | 同上 |
 | 瓦片渲染 | < 25ms/张 | 同上 |
 | 滚动掉帧 | < 5% 帧 | `dumpsys gfxinfo <pkg> framestats` |
-| 峰值内存 | < 120MB | `dumpsys meminfo <pkg>`，含 1080×20000 长图 |
-| APK | < 8MB | `assembleRelease` 产物 |
+| 峰值内存 | < 120MB | `dumpsys meminfo <pkg>`（真机）+ `:core:longPageMemoryTest`（JVM，96MB 堆） |
+| APK | < 8MB | `assembleRelease` 产物（当前 1.18MB） |
 
-长图测试图：用脚本拼一张 1080×20000 的重复文本图（不要提交进仓库，测试时生成）。
+长图测试图：`LongPageMemoryTest` 在内存里生成 1080×20000 的伪文字页（不落盘、不入库）。
 
-**JVM 层基准**：`core/src/test` 里加一个 `AnalyzerBenchmark`（普通 JUnit，跑 20 次取中位数），防止某次改动把 O(N) 变成 O(N²)。阈值设宽一点（比如 < 400ms，CI 机器慢），只抓数量级回归。
+**JVM 层基准**：`GoldenTest` 里有一条"analysis < 400ms"的粗阈值（只抓数量级回归）；
+独立的 `AnalyzerBenchmark`（跑 20 次取中位数）**还没写**——要做的话放在 `core/src/test`，
+断言放宽到 < 400ms，别当性能门禁用。
 
 ## 6. 真机验收（20 张）
 
@@ -245,14 +258,17 @@ powershell -ExecutionPolicy Bypass -File scripts/score-samples.ps1 -SkipRun
 用 `adb connect 127.0.0.1:16384` 连模拟器，`install -r app-debug.apk` 后逐项验证
 （性能不在这一步测，模拟器数据无参考价值）：
 
+> **这是 2026-10-29 的历史验收记录，不是当前功能清单。** 表中"设置面板"与"顶栏切换原图/重排"
+> 后来都被底栏三档取代（见同表最后几行与 [01 §6](01-product.md)）；当前 UI 以 `docs/01` 为准。
+
 | 用例 | 结果 |
 |---|---|
 | 冷启动首页 | ✓ 标题、"选择图片"、隐私说明正常 |
 | 分享进入（ACTION_SEND，`content://`） | ✓ 正确 intake 并进入阅读页；URI 未授权时走"这张图打不开"错误页，不崩 |
 | 重排渲染 | ✓ Twitter 样例 `REFLOW` scale 2.391（日志 `analysis=586ms`），tile 渲染正常 |
-| 原图/重排切换 | ✓ 顶栏按钮双向切换，阅读位置不丢 |
+| 原图/重排切换 | ✓ 顶栏按钮双向切换，阅读位置不丢（**0.2.2 起改为底栏三档**） |
 | 回退提示条 | ✓ Arknights 样例显示"这一页没有找到可放大的切分位置，已显示原图，可双指放大"+"知道了"；原图页面不显示"查看原图" |
-| 设置面板 | ✓ 字号（小/标准/大）与切分方式可见可选，关闭后回到阅读页 |
+| 设置面板 | ✓ 字号（小/标准/大）与切分方式可见可选，关闭后回到阅读页（**v1.1 已移除，见下**） |
 | 低收益回退 | ✓ 在 1920 宽窗口下 gain=1.11 → `ORIGINAL / GAIN_TOO_SMALL`，提示"文字已经足够大，不需要重排" |
 | 首页精简（v1.1） | ✓ 标题与"选择图片"之间不再有说明文字 |
 | 三档（原图 / ×2 / ×4） | ✓ 分享进入自动落在 ×2；点 ×4 后倍率翻倍（2.39 → 4.78）**且重新切行**（21 → 31 项、同页 BODY 字号偏差 ≤2%）；点原图回到 1×；换档后阅读比例保持 |

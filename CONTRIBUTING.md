@@ -27,13 +27,34 @@ Signed-off-by: Your Name <you@example.com>
 ## 开发前
 
 ```bash
-./gradlew :core:test
+./gradlew :core:test                 # 单元 + 黄金 + （有样例时）真实图回归
+./gradlew :core:longPageMemoryTest   # 长图内存：1080×20000 @ -Xmx96m
 ./gradlew :app:assembleDebug
+powershell -ExecutionPolicy Bypass -File scripts/verify.ps1          # 上面三样一键
+powershell -ExecutionPolicy Bypass -File scripts/verify.ps1 -Release # 追加发行版门禁
 ```
 
-真实截图不随仓库分发（版权/隐私原因），放在 `testdata/private/` 下即可被测试与脚本自动发现；
-HTML 版面夹具在 `testdata/layout/`，用 `node scripts/render-layout-fixtures.mjs` 重渲染。
-详见 [testdata/README.md](testdata/README.md)。
+- **发行版只发 v1**：App 不得依赖 v2（`core/layout/*`、`ReflowPlannerV2`、ORT、模型）。
+  `scripts/verify-v1-only.ps1` 会检查 release 的 `classes.dex` 与 R8 `mapping.txt`，
+  新增任何"顺手接一下 v2"的入口都会被它拦下。
+- `:app` 目前**没有** `androidTest`/`test` 源集；改渲染、解码、手势时必须写清真机手测路径。
+- 真实截图不随仓库分发（版权/隐私原因），放在 `testdata/private/` 下即可被测试与脚本自动发现；
+  **目录存在时每一张都必须通过不变量检查**，缺文件不再是静默跳过。
+  HTML 版面夹具在 `testdata/layout/`，用 `node scripts/render-layout-fixtures.mjs` 重渲染。
+  详见 [testdata/README.md](testdata/README.md)。
+
+## 文档
+
+改行为时同步对应的规范文档，别让文档变成"愿望"：
+
+| 文档 | 性质 | 什么时候改 |
+|---|---|---|
+| [00 概览](docs/00-overview.md) | 定位与成功标准 | 改指标 / 改方案边界 |
+| [01 产品](docs/01-product.md) | **当前 UI 与文案的唯一口径** | 改交互、改文案、改状态机 |
+| [02 算法](docs/02-algorithm.md) | **规范**：参数、流水线、回退 | 改分析/规划/参数 |
+| [03 架构](docs/03-architecture.md) | **规范**：模块、接口、内存、发布口径 | 改结构、改接口、改依赖 |
+| [05 测试](docs/05-testing.md) | **规范**：测试矩阵与发布门槛 | 加/删测试、改门槛 |
+| 04 / 06 / 07 | 历史计划与复盘 | 一般不回改，只追加结论 |
 
 ## PR 约定
 

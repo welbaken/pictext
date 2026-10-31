@@ -699,8 +699,8 @@ sealed interface RenderItem {
 | `figHeightRatio` | 2.8 | 图块判定 | 更小→大标题被当成图 |
 | `figDensity` | 0.62 | 图块判定 | 更小→密集正文被当成图 |
 | `figRunRatio / Frac` | 2.6 / 0.008 | 图块判定 | 更小→表格、下划线被当成图 |
-| `longLineRatio / splitLineRatio` | 0.70 / 0.62 | 行的处置 | 更小→短标题被切开 |
-| `cutWin0 / cutWin1` | 0.06 / 0.025 | 找缝窗口 | 更大→切点偏离中线，左右不等宽 |
+| `longLineRatio` | 0.70 | 长行门槛 = 该系数 × 文字行宽 90 分位 | 更小→短标题也被当成“长行”参与切分 |
+| `cutWin0 / cutWin1` | 0.06 / 0.05 | 找缝窗口（× 图宽） | 更大→切点偏离中线，左右不等宽 |
 | `cutCleanRatio` | 0.70 | 切分有效性 | 更严→更多页退回不切 |
 | `targetEm` | 44 @1080 | 目标字身 | 更大→每行字更少，文章更长 |
 | `minGain` | 1.25 | 收益门槛 | 更大→更多图直接看原图 |

@@ -74,7 +74,9 @@ pictext/
 │     ├─ ColumnSplitterTest.kt
 │     ├─ ReflowPlannerTest.kt
 │     ├─ GoldenTest.kt                     # 端到端，容忍 ±1px
-│     └─ RealImageRegressionTest.kt        # 真实样例：目录在即必须全过
+│     ├─ RealImageRegressionTest.kt        # 真实样例：目录在即必须全过
+│     ├─ RenderPlanGeometryTest.kt         # 瓦片命中 / 图块点按 / 瓦片高度
+│     └─ LongPageMemoryTest.kt             # 1080×20000 @96MB（:core:longPageMemoryTest）
 ├─ cli/
 │  └─ src/main/kotlin/app/pictext/cli/Main.kt
 ├─ app/
@@ -92,6 +94,7 @@ pictext/
 │     │  ├─ image/SourceStripCache.kt
 │     │  ├─ image/ViewportImageLoader.kt
 │     │  ├─ render/TileRenderer.kt
+│     │  ├─ render/BitmapRecycler.kt      # 显示位图延迟一帧回收
 │     │  ├─ ui/home/HomeScreen.kt
 │     │  ├─ ui/viewer/ViewerScreen.kt
 │     │  ├─ ui/viewer/ViewerViewModel.kt
@@ -99,11 +102,12 @@ pictext/
 │     │  ├─ ui/viewer/ReflowPage.kt
 │     │  ├─ ui/viewer/OriginalPage.kt
 │     │  ├─ ui/viewer/FigureDialog.kt
-│     │  ├─ ui/viewer/TopBar.kt / BottomBar.kt   （v1.1：底栏 = 缩放 ×0.5/×2 + 切分 chip + 进度）
+│     │  ├─ ui/viewer/TopBar.kt / BottomBar.kt   （底栏 = 原图/×2/×4 三档 + 进度条）
+│     │  ├─ ui/viewer/ViewerLevel.kt             # 三档定义与缩放轴上下限
 │     │  ├─ ui/theme/{Color.kt, Theme.kt, Type.kt}
 │     │  ├─ data/SettingsRepository.kt
 │     │  └─ data/ProgressStore.kt
-│     └─ res/{values/strings.xml, values/themes.xml, mipmap-*/...}
+│     └─ res/{values/strings.xml, values/themes.xml, drawable/ic_launcher.png}
 └─ docs/
 ```
 
@@ -148,11 +152,11 @@ espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref =
 
 ### 3.1 构建配置要点
 
-- `core`：`kotlin("jvm")` + `jvmToolchain(17)`，target 17；
-- `app`：`compileSdk 35`、`minSdk 26`、`targetSdk 35`、`buildFeatures.compose = true`、`composeOptions` 不需要（Kotlin 2.0 用 `org.jetbrains.kotlin.plugin.compose`）；
-- `release` 开 `isMinifyEnabled = true` + `isShrinkResources = true`；
-- 无 NDK、无 `abiFilters`——因为没有 native 库；
-- `packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"`。
+- `core`：`kotlin("jvm")` + `jvmToolchain(17)`，target 17；测试任务见 §14（含 `longPageMemoryTest`）；
+- `app`：`compileSdk 35`、`minSdk 26`、`targetSdk 35`、`buildFeatures.compose = true`、`buildConfig = true`、`composeOptions` 不需要（Kotlin 2.0 用 `org.jetbrains.kotlin.plugin.compose`）；
+- `release` 开 `isMinifyEnabled = true` + `isShrinkResources = true`，`proguard-rules.pro` 为空（R8 默认规则）；
+- 无 NDK、无 `abiFilters`——因为没有 native 库（0.5 起连 ORT 也没有）；
+- `packaging.resources.excludes += setOf("/META-INF/{AL2.0,LGPL2.1}")`。
 
 ## 4. 核心接口
 
@@ -172,11 +176,18 @@ class GrayImage(val width: Int, val height: Int, val data: ByteArray) {
 }
 
 // ---------- model/PageLayout.kt
+// ---------- model/PageLayout.kt（摘录，字段以代码为准）
+enum class LineRole { BODY, HEADING, CAPTION, UI }
+enum class FigureKind { PHOTO, UI, DECOR }
+
 data class TextLine(
-    val band: RectI,        // A 坐标：行带（y 范围 + 墨迹 x 范围）
-    val cutX: Int,          // A 坐标：该行的切点；-1 表示不切
-    val split: Boolean,
-    val centered: Boolean,
+    val band: RectI,                 // A 坐标：行带（y 范围 + 墨迹 x 范围）
+    val cutX: Int = -1,              // A 坐标：该行的切点；-1 表示不切
+    val split: Boolean = false,
+    val centered: Boolean = false,
+    val role: LineRole = LineRole.BODY,
+    val cuts: List<Int> = emptyList(),              // ×4 二次重排的候选字缝
+    val cutFeatures: LineCutFeatures? = null,       // [v2] 三级刀口特征；v1 恒为 null
 )
 
 sealed interface Block {
@@ -184,7 +195,10 @@ sealed interface Block {
     data class Paragraph(val lines: List<TextLine>) : Block {
         override val bounds: RectI get() = lines.fold(RectI.EMPTY) { acc, l -> acc.union(l.band) }
     }
-    data class Figure(override val bounds: RectI) : Block
+    data class Figure(
+        override val bounds: RectI,
+        val kind: FigureKind = FigureKind.PHOTO,
+    ) : Block
 }
 
 data class Diagnostics(
@@ -194,6 +208,9 @@ data class Diagnostics(
     val figureCount: Int = 0,
     val cleanRatio: Float = 0f,
     val notes: List<String> = emptyList(),
+    val splitCount: Int = 0,         // 参与切分的行数（cleanRatio 分母）
+    val splitClean: Int = 0,         // 其中切点干净的行数
+    val longLineCount: Int = 0,      // 条带合并后据此判 too_few_long_lines
 )
 
 data class PageLayout(
@@ -211,22 +228,40 @@ data class PageLayout(
     val isDark: Boolean,
     val backgroundColor: Int,      // ARGB
     val diagnostics: Diagnostics,
+    val regions: List<LayoutRegion> = emptyList(),          // [v2] 阅读顺序区域；v1 为空
+    val strategy: LayoutStrategy = LayoutStrategy.PROJECTION, // 规划器据此分流
 ) {
     fun toSource(r: RectI): RectI  // A -> S，向外取整
 }
 
-// ---------- model/ReflowPlan.kt
+// ---------- model/ReflowPlan.kt（摘录）
 enum class PlanMode { REFLOW, NO_SPLIT, ORIGINAL }
 
 enum class FallbackReason {
-    NONE, NO_INK, NO_TEXT, TOO_FEW_LONG_LINES, WEAK_CUT, GAIN_TOO_SMALL, TOO_TALL
+    NONE, NO_INK, NO_TEXT, TOO_FEW_LONG_LINES, WEAK_CUT,
+    GAIN_TOO_SMALL, TOO_TALL, MULTI_COLUMN, LAYOUT_FALLBACK,   // 后两个：多栏 / v2 不可用
 }
+
+enum class CutKind { NONE, HARD, SOFT, FORCED }   // [v2] 刀口级别
 
 sealed interface RenderItem {
     val src: RectI      // S 坐标
     val dest: RectI     // O 坐标
-    data class TextRow(override val src: RectI, override val dest: RectI, val lineIndex: Int) : RenderItem
-    data class Figure(override val src: RectI, override val dest: RectI, val blockIndex: Int) : RenderItem
+    data class TextRow(
+        override val src: RectI, override val dest: RectI, val lineIndex: Int,
+        val role: LineRole = LineRole.BODY,
+        val scale: Float = 1f,             // 该行实际用的倍率（A 空间）
+        val regionIndex: Int = -1,          // [v2]
+        val segmentIndex: Int = 0,          // [v2]
+        val segments: Int = 1,              // [v2]
+        val cut: CutKind = CutKind.NONE,    // [v2]
+    ) : RenderItem
+    data class Figure(
+        override val src: RectI, override val dest: RectI, val blockIndex: Int,
+        val kind: FigureKind = FigureKind.PHOTO,
+        val scale: Float = 1f,
+        val regionIndex: Int = -1,          // [v2]
+    ) : RenderItem
 }
 
 data class ReflowPlan(
@@ -236,15 +271,25 @@ data class ReflowPlan(
     val gain: Float,
     val mode: PlanMode,
     val fallback: FallbackReason,
-    val items: List<RenderItem>,
+    val items: List<RenderItem>,          // 必须按 dest.top 单调（瓦片二分依赖它）
     val tileHeightPx: Int = 1024,
     val notes: List<String> = emptyList(),
+    val backgroundColor: Int = 0xFFFFFFFF.toInt(),
+    val isDark: Boolean = false,
+    val bodyScale: Float = scale,          // 全页统一的正文倍率（A 空间）
+    val strategy: LayoutStrategy = LayoutStrategy.PROJECTION,  // [v2]
+    val layout: LayoutSummary? = null,                          // [v2] 供 CLI/审计
 ) {
-    val tileCount: Int get() = (height + tileHeightPx - 1) / tileHeightPx
+    val tileCount: Int get() = if (height <= 0) 0 else (height + tileHeightPx - 1) / tileHeightPx
     fun tileTop(i: Int) = i * tileHeightPx
-    fun tileHeight(i: Int) = minOf(tileHeightPx, height - tileTop(i))
+    fun tileHeight(i: Int) = minOf(tileHeightPx, height - tileTop(i)).coerceAtLeast(0)
+    fun itemsIntersecting(tileRect: RectI): List<RenderItem>   // 按 dest.top 二分
+    fun figureAt(x: Int, y: Int): RenderItem.Figure?           // 点按全屏
 }
 ```
+
+> 上面是**摘录**，不是完整签名；新增/改名时以 `core/src/main/kotlin/...` 为准。
+> `[v2]` 标记的字段只增不减地留在模型里，但 App 侧没有任何代码读它们（R8 会连同读取方一起剥掉）。
 
 ```kotlin
 // ---------- 分析入口
@@ -267,16 +312,19 @@ class ReflowPlanner {
 ## 5. 会话生命周期
 
 ```kotlin
+// ---------- session/DocumentSession.kt
 class DocumentSession(
-    val id: String,
+    val key: String,                    // 源图 SHA-256，阅读进度用它做键
     val sourceFile: File,
     val sourceImage: SourceImage,
+    var strips: SourceStripCache,       // 改视口宽度时整体换新
+    var layout: PageLayout,
+    var plan: ReflowPlan,
+    var renderer: TileRenderer,
 ) : Closeable {
-    var layout: PageLayout? = null
-    var plan: ReflowPlan? = null
-    var renderer: TileRenderer? = null
-    var planVersion: Int = 0          // 改字号/切分方式后自增，触发瓦片重渲染
-    override fun close() { sourceImage.close() }
+    var planVersion: Int = 0            // 重新规划后自增，瓦片按它重渲染
+    var multiplier: Float = 1f          // 生成当前 plan 时的重排倍率（1.0 = ×2，2.0 = ×4）
+    override fun close() { strips.clear(); sourceImage.close() }
 }
 ```
 
@@ -425,9 +473,12 @@ private fun TileImage(session: DocumentSession, index: Int, modifier: Modifier) 
 ```
 
 - `produceState` 在 item 滚出屏幕时自动取消，避免快速滑动时堆积任务；
-- **必须回收位图**：`DisposableEffect(bitmap)` 里把组合期取到的旧位图 `recycle()`（0.2.2 起）。
-  ×4 的瓦片 1080×1024 一张约 4MB，只靠 GC 的话快速滚动会把几十张丢给 finalizer，
-  低内存机器直接 OOM。注意写成 `val held = bitmap; onDispose { held.recycle() }`——
+- **必须回收位图**：`DisposableEffect(bitmap)` 里把组合期取到的旧位图交给
+  `render/BitmapRecycler`（0.5.1 起）。×4 的瓦片 1080×1024 一张约 4MB，只靠 GC 的话
+  快速滚动会把几十张丢给 finalizer，低内存机器直接 OOM；
+  但**不能立刻 `recycle()`**——display list 可能还持有这一帧的位图，极端时序会抛
+  `Canvas: trying to use a recycled bitmap`。`BitmapRecycler` 把它 `Handler.post` 到当前帧之后
+  （晚一帧、只多占 4MB），既不闪也不崩。注意写成 `val held = bitmap; onDispose { recycler(held) }`——
   直接在 `onDispose` 里读 `bitmap` 会读到已经替换后的新值，把正在显示的那张回收掉；
 - 高度用 px → dp 精确换算，**不要** `wrapContent`，否则瓦片之间会出现 1px 缝；
 - 瓦片之间没有 `Arrangement.spacedBy`，间距都烘焙在计划里。
@@ -457,16 +508,20 @@ awaitEachGesture {
 ```kotlin
 class ViewportImageLoader(private val source: SourceImage) {
     /**
-     * @param scale  相对"按屏宽显示"的缩放，1..5
-     * @param offset 视口在缩放后图像中的偏移（px）
+     * @param offset 视口左上角在“缩放后整图”中的像素坐标
+     * @param scale  缩放后整图相对源图的像素比例（`screenW/srcW × zoom`）
      * @param viewport 视口尺寸（px）
      */
-    suspend fun load(scale: Float, offset: Offset, viewport: IntSize, maxPx: Int = 2048): Bitmap?
+    suspend fun load(offset: Offset, scale: Float, viewport: IntSize): ViewportFrame?
 }
+// ViewportFrame(bitmap, src)：解码出的位图 + 它覆盖的源图矩形（S 坐标）
 ```
 
 - 手势进行中：只对上一张位图做 `graphicsLayer` 变换，不重新解码；
-- 手势结束 120ms 后（`snapshotFlow().debounce`）：按当前视口解码一块新的位图，尺寸 ≤ 2048×2048；
+- 手势结束 120ms 后（`LaunchedEffect(zoom, offset, viewport) { delay(120) }`，下一次变化会取消它）：
+  只解码当前视口覆盖的源图区域；
+- 解码的 `inSampleSize` 由 `src / viewport` 推出（`coerceIn(1, 16)`），解出来的像素量约等于一屏，
+  不再额外限 2048——1080×20000 的图放大后也只解一屏；
 - 缩放上限 5×；低于 1× 回弹；
 - **拖动方向**：`offset` 是“视口左上角在缩放后图像上的位置”，画面画在 `-offset` 处，
   所以 `detectTransformGestures` 的 `pan` 要**减**掉（`offset - pan`）。加 pan 会变成
@@ -474,8 +529,9 @@ class ViewportImageLoader(private val source: SourceImage) {
   `offset' = (offset + centroid) × factor - centroid - pan`；
 - **上下留白**：与原图页一致，`padding(top = statusTop + 56.dp, bottom = navBottom + 56.dp)`，
   顶栏出现时不会压住图片；顶栏/底栏都可以点正文收起（`Visible = state.showBars`）；
-- **位图回收**：新的视口帧到达时回收上一帧（同样把值取成局部变量再 `onDispose`），
-  反复缩放/拖动不会把整屏位图堆在 finalizer 里；解码失败只显示转圈，不让异常冒到 Compose；
+- **位图回收**：新的视口帧到达时把上一帧交给 `BitmapRecycler`（晚一帧回收，理由同上），
+  反复缩放/拖动不会把整屏位图堆在 finalizer 里；解码失败只显示转圈并写一条日志，
+  不让异常冒到 Compose；
 - 图块全屏复用同一个类，只是把 `source` 的可见范围限定为图块矩形。
 
 ### 6.6 渲染耗时
@@ -500,8 +556,8 @@ filesDir/
 
 - 不写外部存储；
 - 不申请任何存储权限；
-- 导出用 SAF：`ActivityResultContracts.CreateDocument("image/png")`；
-- 启动时清理：`inbox` 里 `lastModified < now - 7d` 的文件直接删。
+- **导出还没实现**（§12 是计划）：打算走 SAF `CreateDocument`，不需要权限；
+- 启动时清理：`inbox` 里 `lastModified < now - 7d` 的文件直接删（`SharedImageIntake.cleanupOldFiles`）。
 
 ## 8. 权限与清单
 
@@ -516,7 +572,7 @@ filesDir/
     <application
         android:name=".PicTextApp"
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.PicText">
@@ -578,7 +634,11 @@ sealed interface ViewerUiState {
     data class Ready(
         val pages: List<PageState>,
         val current: Int,
-        val showBars: Boolean,
+        val showBars: Boolean = true,
+        val mode: ViewerMode = ViewerMode.REFLOW,   // 全局视图模式（跟随底栏档位）
+        val level: ViewerLevel = ViewerLevel.X2,    // 原图 / ×2 / ×4
+        val settings: AppSettings = AppSettings(),
+        val viewportWidth: Int = 1080,
     ) : ViewerUiState
     data class Failed(val kind: FailureKind) : ViewerUiState
 }
@@ -603,7 +663,7 @@ data class PageState(
 | `UNREADABLE` | URI 打不开 | 错误页 + 重试 |
 | `UNSUPPORTED_FORMAT` | HEIF on API 26 | 错误页 + 说明 |
 | `DECODE_FAILED` | OOM / 损坏 | 错误页 + 重试（降采样重试一次） |
-| `INTERNAL` | 未捕获异常 | 错误页 + "反馈"（本地日志路径） |
+| `INTERNAL` | 未捕获异常 | 错误页 + 说明（`error_internal`），可返回重试 |
 
 **所有异常必须收敛到 `Failed`，禁止让异常冒到 Compose。**
 
@@ -634,12 +694,15 @@ data class AppSettings(
 |---|---|---|
 | 拷贝 URI | IO | 页面销毁 |
 | 解码分析图 | Default | 页面销毁 |
-| 分析 | Default | 页面销毁 |
-| 规划 | Default（极快，可直接调用） | — |
+| 分析（含条带） | Default；条带内部最多 2 线程（`stripParallelism`） | 页面销毁 |
+| 首次规划 | Default（随分析同一个 `withContext`） | 页面销毁 |
+| 重新规划（换档/缩放/旋转） | 主线程（`replanAll`，每页 ~ms 级） | — |
 | 瓦片渲染 | Default + `Mutex` | item 滚出屏幕 |
 | 视口解码 | Default + `Mutex` | 手势结束前的新请求 |
 
 瓦片渲染串行化：多个瓦片同时解码条带会打爆内存，`Mutex` 让它们排队；排队中的请求若已被取消，直接返回。
+条带分析只并行 2 路是**内存旋钮**（见 [02 §15](02-algorithm.md)）：每条并发条带各自持有
+ink/mask/游程，4 路会把 1080×20000 的峰值顶到 ~124MB，而收益不到 25%。
 
 ## 12. 导出（P1）
 
@@ -670,8 +733,12 @@ data class AppSettings(
 
 | 文件 | 位置 | 说明 |
 |---|---|---|
-| `pictext-release.jks` | `D:\SRC\keys\`（仓库外） | 私钥。换掉它 = 老用户必须卸载重装，务必离线备份 |
+| `pictext-delivery.jks` | `dist/`（仓库内但被 `.gitignore` 忽略） | 当前交付用的**测试签名**；换掉它 = 老用户必须卸载重装 |
 | `keystore.properties` | 仓库根目录，已被 `.gitignore` 忽略 | `storeFile / storePassword / keyAlias / keyPassword` |
+
+> 0.5 的交付包用的是 `dist/pictext-delivery.jks`（alias `pictext`，口令见 `dist/README.txt`）；
+> 早期文档写的 `D:\SRC\keys\pictext-release.jks` 是更早的一把钥匙。换钥匙前先确认要覆盖的用户群，
+> 否则升级装不上。
 
 `app/build.gradle.kts` 读取 `keystore.properties` 建 `signingConfigs.release` 并挂到 release
 构建类型上，所以 `:app:assembleRelease` **一步产出已签名 APK**（`app-release.apk`）。
@@ -693,7 +760,7 @@ v2（版面模型那一套）**只留在 `:core` / `:cli` 做技术验证，不�
 
 允许残留的只有被 v1 模型字段引用的**类型**（当前实际只剩 `LayoutStrategy` / `CutKind` 两个枚举，
 没有方法体逻辑）；`LayoutPipeline`、`CutPolicy`、`CoverageAuditor`、`ReflowPlannerV2` 等
-都会整类消失。APK 实测 1.19MB（0.5 之前的 v2 包是 24.59MB）。
+都会整类消失。APK 实测 1.18MB（0.5 之前的 v2 包是 24.59MB）。
 
 **注意**：这只保证 release 产物；`assembleDebug` 不做 R8，debug 包里仍能看到 v2 代码。
 

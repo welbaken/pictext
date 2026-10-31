@@ -10,9 +10,11 @@
 > `testdata/private/samples*` 的 18 张真实截图、
 > 以及当前 `core/`（`RowSegmenter → RowClassifier → ColumnSplitter → ReflowPlanner`）的代码基线。
 > 范围：v2.0。仍然不做 OCR、不做语义理解、不联网；所有像素原样搬运。
-> 状态：**实施中**（2026-10-30）。M0 已完成并实测：官方模型契约已核对、ONNX 已产出并与官方 Paddle 对拍
+> 状态：**已停止接入产品（0.5.1）**。M0 已完成：官方模型契约已核对、ONNX 已产出并与官方 Paddle 对拍
 > ≤0.01px；`core/layout` 的检测后处理 / tile 网格 / 区域合并 / 细化 / 覆盖审计 / 阅读顺序 / 切点 / 规划 / 审计
-> 已实现并带单测。尚未完成：真实样例检测基线（V2-13）、App 接线（V2-32）、真机性能（V2-40）。进度见 §13。
+> 已实现并带单测。**V2-32（App 接线）与 V2-51（顶栏「强化重排」）已成为历史**：V2-52 决定 0.5 只发 v1，
+> v2 留在 `:core`/`:cli` 做技术验证，release 产物由 `scripts/verify-v1-only.ps1` 机检门禁。
+> 进度与结论见 §13（§13.6.10 是最终决定）。
 > 文中标“待复核”的模型数字已在 M0 用实际模型文件确认（见 §4.2 的实测块），代码以 `models/doclayout/contract.json` 为准。
 
 ---
@@ -1803,6 +1805,7 @@ testdata/report-v2.md                  # 批量对比
 
 1. 设置流首帧只同步、不当变更（`settingsLoaded` 标记），`updateReadySettings()` 照常执行；
 2. `reanalyzeAll()` 在 `entries.isEmpty()` 时直接返回——没有图片就没有“重新分析”，
+   （该函数与 v2 开关一起在 0.5.1 删除了，这里只是事故复盘。）
    更不能顺带取消正在进行的 `open()`。
 
 **验证**：β=on 下连续两轮冷启动，均正常（`DOC_LAYOUT` 1553ms / 1608ms）；

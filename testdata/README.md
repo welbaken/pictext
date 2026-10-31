@@ -38,9 +38,9 @@ layout/
 
 ```text
 testdata/private/
-├─ samples/          # twitter.jpg, news_jp.jpg, xerj.jpg, arknights.jpg
-├─ samples2/         # 18 张批量样例 + notes.csv
-├─ samples_mark/     # 带手写标记的样例
+├─ samples/          # 任意真实截图（jpg/png）。回归会跑目录里的每一张
+├─ samples2/         # 可选：批量评分用的另一批样例 + notes.csv
+├─ samples_mark/     # 带手写标记的样例（人工判读用）
 └─ samples_ui/       # 其他本地 UI 截图
 ```
 
@@ -52,13 +52,21 @@ powershell -ExecutionPolicy Bypass -File scripts/test-samples.ps1
 powershell -ExecutionPolicy Bypass -File scripts/score-samples.ps1
 ```
 
-若没有私有样例，相关测试会 `assumeTrue` 跳过，不会红；`layout/` 的 12 张夹具仍然覆盖
-顺序、切分、覆盖与规划。
+**跳过规则（0.5.1 起）**：目录不存在 → 整类测试跳过（CI 没样例也不该红）；
+目录存在 → 里面每一张都必须通过不变量检查，**单个文件缺失或不合规是失败，不再静默跳过**。
+唯一按文件名依赖的是长图回归 `006v119zgy1iik2r1f4z0j30j67y9npf.jpg`（690×10305），
+它的断言是"必须回退原图"，样例被删掉时该用例会失败并提示补文件。
+`ImageIO` 读不了的格式（当前 JDK 没有 webp 插件）只打印并计入跳过——真机走 `BitmapFactory`，
+格式支持面更宽。
 
 ## 3. 历史报告
 
-`report.md`、`scoreboard.md` 是早期用真实样例生成的报告，保留作 v1 基线记录。
-它们不含图片，但其中的链接指向本地的 `out/`、`out2/` 目录；重跑脚本会重新生成。
+`report.md`、`scoreboard.md` 与 `report-*.md` 是早期用真实样例生成的报告，保留作基线记录。
+它们不含图片，链接指向本地的 `out/`、`out2/` 目录；重跑脚本会重新生成。
+
+> **注意**：`report-ab.md` / `report-v2.md` / `report-blind.md` / `report-detection.md`
+> 产生于 v2 曾接入 App 的时期，文中的"强化重排"入口、`SettingsRepository.smartLayout`
+> 等**在 0.5.1 已不存在**（0.5 只发 v1）。它们只用于回看当时的对比数据，不代表当前产品行为。
 
 ## 4. 新增样例的规矩
 
