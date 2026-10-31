@@ -1625,6 +1625,7 @@ testdata/report-v2.md                  # 批量对比
 | V2-13（真值收尾） | `core/src/test/.../layout/Fixture{Order,Composer,CutPolicy}Test.kt`、`FixtureSupport.kt`、`scripts/score-detection.ps1`、`testdata/report-detection.md` | 顺序 **9/10** 逐块一致；12 张真值版面 **0 次 `LAYOUT_FALLBACK`**；敏感行强制切 **0**；检测面积召回 56.5%、行覆盖 80.5%（**闸门未过，见 §13.7**） |
 | V2-32 | `app/.../layout/{ModelAssets,OrtLayoutDetector,AndroidTileSampler}.kt`、`AppContainer`、`SettingsRepository.smartLayout`（β 开关在顶栏）、`ViewerViewModel` 走 `SmartReflow` | MuMu（Android 15 / 1440×2560 / x86_64）实测：模型从 assets 装到 filesDir、ORT 双输入会话就绪、`strategy=DOC_LAYOUT`、`coverage=1.000`、`auditV2=true`、页面正常重排 |
 | V2-43 | `core/.../plan/TrustGate.kt`、`LayoutPipeline` 的四个信任度信号、`SmartReflow` 两段式复核 | 聊天夹具（文字被框成图片）**回退 v1**：`layout_text_as_figure`；42 张真实样例 **零误伤**（v2 31→30 全部来自夹具）；正常页零成本（文字面积 ≥0.20 不复核） |
+| V2-48 | `core/.../layout/RegionDeduper.kt`、`LayoutPipeline` 在补区后调用 | 690×1533 深色页的重复 src **17 组 → 0**；42 张批量 `dupSrc=0`、`itemsDropped=0`；`:core:test` 新增 7 个去重用例 |
 
 ### 13.1.1 检测基线摘要（详见 `testdata/layout/detection-baseline.md`）
 
@@ -1679,6 +1680,13 @@ testdata/report-v2.md                  # 批量对比
 15. **检测评分口径**：不做逐框 IoU 匹配。`RegionBuilder` 会刻意合并同列碎片，逐框匹配会把
     “合并”误算成漏检（实测逐框召回 34.7%，面积召回 56.5%，同一批结果）。改用 8px 网格的
     面积覆盖 + 行中心覆盖，见 `scripts/score-detection.ps1`。
+16. **“同一 src 渲染多次”的真因不是跨 tile NMS（V2-48）**：初始判读（§13.6.2 末尾）以为是
+    `Nms.dedupeAcrossTiles` 的 IoU 阈值太松。加日志逐 tile 打印 `first.residuals` 后发现：
+    模型区域只覆盖了一半 tile 墨迹，**覆盖审计在重叠的两个 tile 上各补出一块残差**；残差 ROI
+    是外接框 + 6px 外扩，细化时把**已经由模型区域覆盖的行**又切了一遍。所以修法不是改 NMS
+    阈值，而是在“模型区域 + 残差区域都细化完”之后做**行带级/块级去重**（`RegionDeduper`）。
+    另外 `plan.json` 原来的 `"seg":0/1` 不是合法 JSON，顺手改成 `"seg":"0/1"`，`score-v2.ps1`
+    才能用机器可读的方式统计 `dupSrc` / `itemsDropped`。
 
 ### 13.4 Android 实测（MuMu 模拟器，Android 15 / 1440×2560 / x86_64）
 
@@ -1820,10 +1828,55 @@ testdata/report-v2.md                  # 批量对比
    汉字行不受影响）。
 
 **顺带发现的更严重问题**：`006v119zgy1iihqk46zfij30z025swqq`（690×1533、3 个 tile）的
-plan 里**同一个 `src` 被渲染 3 次**（17 组重复）。其余 8 张抽查为 0 重复，说明是**跨 tile
-重叠区的去重没兜住**（同一段文字在 tile 0 / tile 2 各检出一次，框略有偏移）。
-这比“右侧缺一截”严重得多，必须优先修：应该在 `Nms.dedupeAcrossTiles` 之后再做一次
-“细化后的行带级去重”，或者把去重阈值从 IoU 改成“交并比 ≥0.3 且中心距 < 0.5×行高”。
+plan 里**同一个 `src` 被渲染 3 次**（17 组重复）。真因与修法见 §13.6.3（不是跨 tile NMS，
+而是残差补区把已覆盖的行又切了一遍）。
+
+### 13.6.3 V2-48：多 tile 页同一行渲染 2–3 次（已修，2026-10-31）
+
+**现象**：690×1533 深色页（3 个纵向 tile）的 `plan.json` 里 69 个 item、38 行，
+其中 **17 组 `src` 重复**；其余 8 张抽查 0 重复。
+
+**初始假设（错的）**：跨 tile 重叠区的模型框 IoU 没过 0.5，`Nms.dedupeAcrossTiles` 漏掉。
+按这个方向改阈值（候选 ②“IoU≥0.3 且中心距<0.5×行高”）没有证据支持，所以先加了
+逐 tile 的残差日志再动手。日志（`first.residuals`）显示：
+
+```text
+tile#0 ink=76942 covered=35738  residual [0,499,690,690]:41190
+tile#1 ink=115975 covered=39310 residual [0,626,690,972]:76362
+tile#2 ink=46794 covered=18283  residual [0,843,690,972]:26767
+```
+
+模型区域只覆盖了 46% 的墨迹，两个相邻 tile 各补出一块**几乎相同**的残差。残差 ROI 是
+“外接框 + 6px 外扩”，细化只看像素、不知道哪一行已经有人负责，于是把模型区域里
+`20,620,671,636` 这样的行又切了出来——`plan.json` 里同一行就有 2–3 份。**不是模型框重复，
+是残差区域重复。**
+
+**修法**：`core/.../layout/RegionDeduper.kt`，在“模型区域 + 残差区域都细化完”之后、
+第二次覆盖审计之前做：
+
+1. 先收模型区域的行（模型优先），残差行的几何与已保留行重合就丢弃；
+   “同一行”= y 重叠 ≥50% 较矮行高、行中心距 ≤50% 较矮行高、x 重叠 ≥50% 较窄行宽
+   （只要求 x 有重叠，天然排除双栏）；
+2. 某区域的行**全部**重复：模型区域整块丢（重复框），残差区域也整块丢；
+   真正没覆盖的墨迹会在第二次审计时重新量出来，覆盖率掉下去走回退，不会静默丢内容；
+3. 没有行的残差块（图标/小图）与已保留的非文字区域包含度 ≥80% 时丢弃（跨 tile 重复块）。
+
+**实测**（同一张图）：`items 69→36`、`lines 38→22`、重复组 **17→0**，`coverage=1.000`、
+`auditV2=ok`。42 张批量（`score-v2.ps1` 新增 `dupSrc` / `dropped` 两列）：**0 张有重复
+src、0 个丢块**。`:core:test` 新增 `RegionDeduperTest` 7 个用例（残差行去重、整块丢弃、
+跨 tile 同块、双栏不误合并、相邻行不误合并）。
+
+**副作用（已确认不是回归）**：v2 接管从 31/37 变成 **30/37**。少掉的是
+`Screenshot 2026-10-30 164821`（论坛长截图）：模型把左半页框成 `TABLE`，同时又框了一个
+`TEXT` 区域，两者细化出同一批行。去重后 `TABLE` 里的行不能再作为 `TEXT` 重复渲染，
+v2 的文字行从 7 降到 2，于是 V2-43 可信度闸门按设计回退 v1（v1 把 7 行都当文字排）。
+**这一页回退后的阅读效果比改前更好**（改前是“表格整图 + 同一批文字再来一遍”，视觉重复）。
+其余 41 张的 `v2/v1` 结论不变；A/B 里“字号变小”从 4 张降到 **2 张**（`iifqry1ciaj`
+居中已修，`iihqk46zfij` 行带已修，剩下 2 张是缩略图样张与文字环绕浮动图）。
+
+**为什么不直接改 NMS 阈值**：残差重复与模型框 IoU 无关，改阈值只会让“框略有偏移的
+真实相邻行”更容易被误抑制；行带级去重能同时覆盖模型框与残差两条来源，而且判据是
+“同一物理行”的几何，不依赖分数排序。
 
 ### 13.7 V2-13 闸门结论（2026-10-30）
 

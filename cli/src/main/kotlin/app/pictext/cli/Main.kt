@@ -592,8 +592,9 @@ private fun planJson(
         val scale = if (item.src.width > 0) item.dest.width.toFloat() / item.src.width else 1f
         sb.append("    {\"kind\":\"$kind\",\"role\":\"$role\",\"scale\":${"%.3f".format(scale)},")
         if (item is RenderItem.TextRow) {
-            sb.append("\"region\":${item.regionIndex},\"seg\":${item.segmentIndex}/")
-            sb.append("${item.segments},\"cut\":\"${item.cut}\",")
+            // 引号包住 "0/1"：不带引号的 0/1 不是合法 JSON（ConvertFrom-Json 会整份拒绝）。
+            sb.append("\"region\":${item.regionIndex},\"seg\":\"${item.segmentIndex}/")
+            sb.append("${item.segments}\",\"cut\":\"${item.cut}\",")
         }
         sb.append("\"src\":[${item.src.left},${item.src.top},${item.src.right},${item.src.bottom}],")
         sb.append("\"dest\":[${item.dest.left},${item.dest.top},${item.dest.right},${item.dest.bottom}]}")

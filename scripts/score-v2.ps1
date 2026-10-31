@@ -86,6 +86,27 @@ foreach ($img in $images) {
         }
     }
 
+    # plan.json：同一 src 被渲染多次（V2-48）与丢失的块（itemsDropped）都是硬缺陷。
+    $dupSrc = 0
+    $dropped = 0
+    $planJson = Join-Path $out "plan.json"
+    if (Test-Path $planJson) {
+        try {
+            $textPlan = Get-Content $planJson -Raw -Encoding UTF8
+            if ($textPlan -match '"itemsDropped":\s*(-?\d+)') { $dropped = [int]$Matches[1] }
+            # 只匹配 itemsDetail 里的 `"src":[…]`（顶层是 `"src": [w, h]`，带空格，不会命中）。
+            $srcSeen = @{}
+            foreach ($m in [regex]::Matches($textPlan, '"src":\[(-?\d+),(-?\d+),(-?\d+),(-?\d+)\]')) {
+                $key = $m.Value
+                $srcSeen[$key] = 1 + [int]$srcSeen[$key]
+            }
+            $dupSrc = @($srcSeen.Values | Where-Object { $_ -gt 1 }).Count
+        } catch {
+            $dupSrc = -1
+            $dropped = -1
+        }
+    }
+
     $row = [pscustomobject]@{
         name     = $name
         strategy = $strategy
@@ -99,11 +120,13 @@ foreach ($img in $images) {
         audit    = $auditOk
         height   = $height
         ms       = [int]$sw.ElapsedMilliseconds
+        dupSrc   = $dupSrc
+        dropped  = $dropped
         kinds    = $kinds
     }
     $rows.Add($row)
-    Write-Host ("{0,-34} {1,-13} v2={2,-22} regions={3,-3} cover={4,-6} {5}ms" -f `
-            $name, $row.strategy, $row.v2code, $row.regions, $row.coverage, $row.ms)
+    Write-Host ("{0,-34} {1,-13} v2={2,-22} regions={3,-3} cover={4,-6} dup={5} drop={6} {7}ms" -f `
+            $name, $row.strategy, $row.v2code, $row.regions, $row.coverage, $row.dupSrc, $row.dropped, $row.ms)
 }
 
 $csv = Join-Path $root "testdata/report-v2.csv"
@@ -113,6 +136,10 @@ $v2 = ($rows | Where-Object { $_.strategy -eq "DOC_LAYOUT" }).Count
 $v1 = ($rows | Where-Object { $_.strategy -eq "PROJECTION" }).Count
 $ok = ($rows | Where-Object { $_.audit -eq "ok" }).Count
 $ambig = ($rows | Where-Object { $_.ambig -eq "true" }).Count
+$dupPages = ($rows | Where-Object { $_.dupSrc -gt 0 }).Count
+$dupGroups = ($rows | Measure-Object -Property dupSrc -Sum).Sum
+$dropPages = ($rows | Where-Object { $_.dropped -gt 0 }).Count
+$dropItems = ($rows | Measure-Object -Property dropped -Sum).Sum
 
 $md = Join-Path $root "testdata/report-v2.md"
 $sb = New-Object System.Text.StringBuilder
@@ -121,11 +148,12 @@ $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine("- 生成时间：$(Get-Date -Format 'yyyy-MM-dd HH:mm')")
 [void]$sb.AppendLine("- 模型：$Model")
 [void]$sb.AppendLine("- 图片：$($rows.Count) 张（v2 成功 $v2，回退 v1 $v1，审计通过 $ok，顺序歧义 $ambig）")
+[void]$sb.AppendLine("- 内容完整性：重复 src $dupPages 张 / $dupGroups 组，丢块 $dropPages 张 / $dropItems 个")
 [void]$sb.AppendLine("")
-[void]$sb.AppendLine("| 图片 | 链路 | v2 诊断 | 计划回退 | 区域 | 行 | tile | 覆盖 | 歧义 | 审计 | 高度 | 耗时 |")
-[void]$sb.AppendLine("|---|---|---|---|---|---|---|---|---|---|---|---|")
+[void]$sb.AppendLine("| 图片 | 链路 | v2 诊断 | 计划回退 | 区域 | 行 | tile | 覆盖 | 歧义 | 审计 | 高度 | 重复src | 丢块 | 耗时 |")
+[void]$sb.AppendLine("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
 foreach ($r in $rows) {
-    [void]$sb.AppendLine("| $($r.name) | $($r.strategy) | $($r.v2code) | $($r.fallback) | $($r.regions) | $($r.lines) | $($r.tiles) | $($r.coverage) | $($r.ambig) | $($r.audit) | $($r.height) | $($r.ms)ms |")
+    [void]$sb.AppendLine("| $($r.name) | $($r.strategy) | $($r.v2code) | $($r.fallback) | $($r.regions) | $($r.lines) | $($r.tiles) | $($r.coverage) | $($r.ambig) | $($r.audit) | $($r.height) | $($r.dupSrc) | $($r.dropped) | $($r.ms)ms |")
 }
 [void]$sb.AppendLine("")
 [void]$sb.AppendLine("## v2 诊断码分布")
@@ -144,4 +172,4 @@ $sb.ToString() | Set-Content -Path $md -Encoding UTF8
 Write-Host ""
 Write-Host "csv: $csv"
 Write-Host "md : $md"
-Write-Host "v2=$v2 v1Fallback=$v1 auditOk=$ok ambiguous=$ambig"
+Write-Host "v2=$v2 v1Fallback=$v1 auditOk=$ok ambiguous=$ambig dupPages=$dupPages dupGroups=$dupGroups dropPages=$dropPages dropItems=$dropItems"

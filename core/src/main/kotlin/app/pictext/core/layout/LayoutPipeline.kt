@@ -108,6 +108,7 @@ class LayoutPipeline(
         ),
     )
     private val fixer = RegionKindFixer(options)
+    private val deduper = RegionDeduper()
     private val auditor = CoverageAuditor(options)
     private val orderer = ReadingOrder(options)
     private val composer = PageComposer()
@@ -221,7 +222,9 @@ class LayoutPipeline(
             }
         }
 
-        val all = regions + residuals
+        // 残差 ROI 会把“已被模型区域覆盖的行”重新切出来（外接框 + 外扩），两个重叠 tile
+        // 也可能各补一块同一墨迹。做一次行带级/块级去重，否则 plan 里同一 src 会渲染多次（V2-48）。
+        val all = deduper.dedupe(regions, residuals)
         val coverage = auditor.report(prepared.map { it.audit(all) })
         val coverageMs = (System.nanoTime() - tCoverage) / 1_000_000
         if (coverage.coverage < options.minCoverage) {
