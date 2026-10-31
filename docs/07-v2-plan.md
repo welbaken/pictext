@@ -1977,7 +1977,17 @@ A/B 字号中位 1.008×，变大 13 / 持平 15 / 变小 3；3 张“变小”�
   读 `keystore.properties`（gitignore）。用临时自签名 keystore 验证过 release 可构建：
   **24,585,566 B（24.59MB）**，签名校验通过；安装后 `base.apk` 占 23,996KB、`/data/data`
   7,660KB（含 4.8MB 模型）。**正式 keystore 仍需用户提供**（密码/alias 不入库）。
-- **仍待用户参与**：18 张真实 + 6 张夹具的人工 A/B 评分（表已建）、3 台真机验收、
+- **盲评页面（2026-10-31）**：V2-41 原计划的 18 张真实在 `testdata/private/samples2`
+  （未入库），6 张合成页也不在仓库；按用户要求改用本机现有 `testdata/samples` +
+  `testdata/layout/screens` 的 37 张可解码图。
+  - `scripts/make-blind-review.ps1`：逐张跑 `--compare`，把 after-v1/after-v2 缩到 540 宽，
+    按文件名哈希随机左右（重跑稳定），生成
+    `testdata/out/blind-review/index.html`（页内评分、localStorage 保存、同步滚动、导出 CSV）
+    和隐藏映射 `mapping.csv`；
+  - 评分页 → 导出 `blind-ratings.csv` 放回同目录 →
+    `scripts/score-blind.ps1` → `testdata/report-blind.md`（还原 v1/v2 后的
+    可用/勉强/不可用、顺序、丢内容、逐张偏好）。
+- **仍待用户参与**：在盲评页上完成 37 张评分（或只评真实样例子集）、3 台真机验收、
   真机 release 的安装体积与 `peakPss`。这些不能由开发侧拍板。
 
 ### 13.7 V2-13 闸门结论（2026-10-30）
