@@ -107,10 +107,31 @@ $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine("")
 [void]$sb.AppendLine("**逐张偏好**：v2 更好 $(Count-Val $per 'preference' 'v2 更好') 张，v1 更好 $(Count-Val $per 'preference' 'v1 更好') 张，持平 $(Count-Val $per 'preference' '持平') 张。")
 [void]$sb.AppendLine("")
-[void]$sb.AppendLine("| 页面 | 图片 | 分组 | v1 | v2 | v2 顺序 | v2 丢内容 | 偏好 | 备注 |")
-[void]$sb.AppendLine("|---|---|---|---|---|---|---|---|---|")
+[void]$sb.AppendLine("## 按分组")
+[void]$sb.AppendLine("")
+[void]$sb.AppendLine("| 分组 | 张数 | v2 更好 | v1 更好 | 持平 |")
+[void]$sb.AppendLine("|---|---|---|---|---|")
+foreach ($g in ($per | Group-Object group | Sort-Object Name)) {
+    [void]$sb.AppendLine("| $($g.Name) | $($g.Count) | $(@($g.Group | Where-Object preference -eq 'v2 更好').Count) | $(@($g.Group | Where-Object preference -eq 'v1 更好').Count) | $(@($g.Group | Where-Object preference -eq '持平').Count) |")
+}
+[void]$sb.AppendLine("")
+[void]$sb.AppendLine("## 硬门槛（内容 / 顺序）")
+[void]$sb.AppendLine("")
+$v1LossPages = @($per | Where-Object v1Loss -eq '有丢失' | ForEach-Object { "$($_.page) $($_.image)" })
+$v2LossPages = @($per | Where-Object v2Loss -eq '有丢失' | ForEach-Object { "$($_.page) $($_.image)" })
+$v1OrderPages = @($per | Where-Object v1Order -eq '错' | ForEach-Object { "$($_.page) $($_.image)" })
+$v2OrderPages = @($per | Where-Object v2Order -eq '错' | ForEach-Object { "$($_.page) $($_.image)" })
+[void]$sb.AppendLine("- v1 内容丢失（$($v1LossPages.Count)）：$(if ($v1LossPages.Count) { $v1LossPages -join '；' } else { '无' })")
+[void]$sb.AppendLine("- **v2 内容丢失（$($v2LossPages.Count)）**：$(if ($v2LossPages.Count) { $v2LossPages -join '；' } else { '无' })")
+[void]$sb.AppendLine("- v1 顺序错（$($v1OrderPages.Count)）：$(if ($v1OrderPages.Count) { $v1OrderPages -join '；' } else { '无' })")
+[void]$sb.AppendLine("- **v2 顺序错（$($v2OrderPages.Count)）**：$(if ($v2OrderPages.Count) { $v2OrderPages -join '；' } else { '无' })")
+[void]$sb.AppendLine("")
+[void]$sb.AppendLine("> 内容丢失与顺序错都是硬门槛：v2 任何一项多于 v1，都不能直接发布。")
+[void]$sb.AppendLine("")
+[void]$sb.AppendLine("| 页面 | 图片 | 分组 | v1 | v2 | v1 顺序 | v2 顺序 | v1 丢 | v2 丢 | 偏好 | 备注 |")
+[void]$sb.AppendLine("|---|---|---|---|---|---|---|---|---|---|---|")
 foreach ($r in $per) {
-    [void]$sb.AppendLine("| $($r.page) | $($r.image) | $($r.group) | $($r.v1Rating) | $($r.v2Rating) | $($r.v2Order) | $($r.v2Loss) | $($r.preference) | $($r.note) |")
+    [void]$sb.AppendLine("| $($r.page) | $($r.image) | $($r.group) | $($r.v1Rating) | $($r.v2Rating) | $($r.v1Order) | $($r.v2Order) | $($r.v1Loss) | $($r.v2Loss) | $($r.preference) | $($r.note) |")
 }
 $sb.ToString() | Set-Content -Path $OutMd -Encoding UTF8
 
