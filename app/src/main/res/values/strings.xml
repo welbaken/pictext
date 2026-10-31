@@ -71,7 +71,7 @@
     <string name="about">关于</string>
     <string name="about_title">关于图读</string>
     <string name="about_version">版本 %1$s</string>
-    <string name="about_body">图读只做一件事：把图片当版面，按文字行左右对半切开再按行插回，让长图在小屏幕上更容易读。\n\n不 OCR、不联网、不上模型，所有处理都在本机完成。图片只保存在应用缓存目录，7 天后自动清理。\n\n正文是图片，TalkBack 读不出文字内容，这是方案本身的限制。</string>
+    <string name="about_body">图读只做一件事：把图片当版面重新排版，让长图在小屏幕上更容易读。\n\n不 OCR、不联网：只在本机用一个小型版面模型（PP-DocLayout-S，约 4.8MB）判断区域与阅读顺序，不识别文字内容，也不会上传任何图片。图片只保存在应用缓存目录，7 天后自动清理。\n\n正文是图片，TalkBack 读不出文字内容，这是方案本身的限制。</string>
 
     <string name="toast_max_images">最多一次读 5 张</string>
     <string name="toast_no_image">没有收到图片</string>

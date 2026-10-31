@@ -1629,6 +1629,7 @@ testdata/report-v2.md                  # 批量对比
 | V2-49 | RegionRefiner 的“行带贴边 → ROI 再外扩” | 同一张图标题第二行右缘 533 → 538（实际墨迹 537），仍是 DOC_LAYOUT、auditV2=ok |
 | V2-50 | 审计降采样 240²、FIGURE 半分辨率细化、区域并行、Android 整页灰度缓存、CLI/Android 内存采样、`scripts/bench-v2.ps1` | 1080×2400 CLI 977→751ms、1080×20000 2335→2057ms；MuMu 1080×2400 3065→1901ms；**目标仍未达标**（详见 §13.6.5） |
 | V2-33 | `--compare` 的 `compare.png`、`testdata/notes-v2.csv` | 42 张评分表已建；compare.png 已验证（1128×1371） |
+| V2-41（部分） | 「关于」文案、`keystore.properties.example`、release/安装体积记录 | release 24.59MB 可构建；安装 23,996KB APK + 7,660KB 数据；人工 A/B 与真机待用户 |
 
 ### 13.1.1 检测基线摘要（详见 `testdata/layout/detection-baseline.md`）
 
@@ -1966,6 +1967,17 @@ v2 的文字行从 7 降到 2，于是 V2-43 可信度闸门按设计回退 v1�
   还会写 **`compare.png`**（左 v1、右 v2，各缩到 540 宽并排；复用 `summary` 的拼图逻辑）。
 - 新增 **`testdata/notes-v2.csv`**：42 张样例一行一张，列为
   `图片, 分组, v2链路, 人工评分v1, 人工评分v2, 主要问题, 备注`，评分留空等 V2-41 人工填。
+
+### 13.6.7 V2-41：可以自动做的部分（真机/人工项仍待用户）
+
+- **「关于」文案已更新**：删掉“不上模型”，改成“只在本机用一个小型版面模型
+  （PP-DocLayout-S，约 4.8MB）判断区域与阅读顺序，不识别文字、不联网、不上传图片”。
+- **release 签名**：仓库里新增 `keystore.properties.example`；`app/build.gradle.kts` 早已支持
+  读 `keystore.properties`（gitignore）。用临时自签名 keystore 验证过 release 可构建：
+  **24,585,566 B（24.59MB）**，签名校验通过；安装后 `base.apk` 占 23,996KB、`/data/data`
+  7,660KB（含 4.8MB 模型）。**正式 keystore 仍需用户提供**（密码/alias 不入库）。
+- **仍待用户参与**：18 张真实 + 6 张夹具的人工 A/B 评分（表已建）、3 台真机验收、
+  真机 release 的安装体积与 `peakPss`。这些不能由开发侧拍板。
 
 ### 13.7 V2-13 闸门结论（2026-10-30）
 
