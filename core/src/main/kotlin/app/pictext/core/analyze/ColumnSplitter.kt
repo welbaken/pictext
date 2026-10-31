@@ -14,8 +14,12 @@ data class SplitOutcome(
     val splitX: Int,
     val cleanRatio: Float,
     val splitCount: Int,
+    val cleanCount: Int,
     val weak: Boolean,
 )
+
+/** 一组“同缩进”的行共用的一根切分列（P2 之外的 C2 改进）。 */
+private data class GroupColumn(val left: Int, val right: Int, val column: Int)
 
 /**
  * Step 8：逐行找字缝，再取中位数作为全局切点。
@@ -42,10 +46,11 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
         height: Int,
         blocks: List<Block>,
         metrics: PageMetrics,
+        deferWeak: Boolean = false,
     ): SplitOutcome {
         val pageWidth = metrics.pageWidth
         if (pageWidth <= 0 || blocks.isEmpty()) {
-            return SplitOutcome(blocks, metrics.textLeft, 0f, 0, true)
+            return SplitOutcome(blocks, metrics.textLeft, 0f, 0, 0, true)
         }
         val roughWidth = max(1, metrics.roughWidth)
         val medH = max(4f, metrics.medianLineHeight)
@@ -78,16 +83,39 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
             it.band.width >= options.longLineRatio * roughWidth && !latinLike(it)
         }
         if (longLines.size < 2) {
-            return SplitOutcome(blocks, (metrics.textLeft + metrics.textRight) / 2, 0f, 0, true)
+            return SplitOutcome(blocks, (metrics.textLeft + metrics.textRight) / 2, 0f, 0, 0, true)
         }
 
-        val center = (metrics.textLeft + metrics.textRight) / 2
         val win0 = max(8, (options.cutWin0 * width).toInt())
-        val first = IntArray(longLines.size) { i ->
-            chooseCut(profile(longLines[i]), center, win0, medH, exemptFor(longLines[i]))?.first
-                ?: approxCut(profile(longLines[i]), center, win0)
+
+        // [C2] 按段落左边距分组：同缩进的段落共用一根列，组间各自一根。
+        // 缩进引用/列表项因此也能切，而不是被压进列宽（audit 的 body_scale_inconsistent）。
+        // 只有 1 行的“孤立缩进行”拿不到自己的列，仍旧走页面列——避免把聊天气泡、
+        // 右移的单行标签这类东西单独劈开。
+        val tolerance = max(3, (options.splitGroupTolerance * pageWidth).toInt())
+        val groups = clusterByLeft(candidates, tolerance)
+        val groupOf = HashMap<TextLine, GroupColumn>(candidates.size)
+        for (cluster in groups) {
+            val members = cluster.filter {
+                !latinLike(it) && it.band.width >= options.splitLeftAlignedRatio * pageWidth
+            }
+            if (members.size < 2) continue
+            val groupLeft = Stats.median(members.map { it.band.left }).toInt()
+            val groupRight = members.maxOf { it.band.right }
+            val groupCenter = (groupLeft + groupRight) / 2
+            val preferred = IntArray(members.size) { i ->
+                chooseCut(profile(members[i]), groupCenter, win0, medH, exemptFor(members[i]))?.first
+                    ?: approxCut(profile(members[i]), groupCenter, win0)
+            }
+            val gc = GroupColumn(groupLeft, groupRight, Stats.median(preferred).toInt())
+            for (line in cluster) groupOf[line] = gc
         }
-        val cut = Stats.median(first).toInt()
+
+        // 页面列 = 覆盖行数最多的那一组的列；没有任何分组时退回几何中心。
+        val pageColumn = groupOf.values.groupingBy { it.column }.eachCount()
+            .maxByOrNull { it.value }?.key
+            ?: (metrics.textLeft + metrics.textRight) / 2
+        val pageGroup = GroupColumn(metrics.textLeft, metrics.textRight, pageColumn)
 
         val win1 = max(5, (options.cutWin1 * width).toInt())
         val inset = options.splitInsetRatio * pageWidth
@@ -100,8 +128,10 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
                 0.06f * pageWidth && (line.band.left - metrics.textLeft) > 0.04f * pageWidth
 
             val eligibleRole = line.role == LineRole.BODY || line.role == LineRole.HEADING
-            val leftAligned = line.band.left <= metrics.textLeft + inset
-            val nearRight = line.band.right >= metrics.textRight - inset
+            // 这一行所属分组：有分组用分组自己的版心与列，孤立行用页面版心与页面列。
+            val group = groupOf[line] ?: pageGroup
+            val leftAligned = line.band.left <= group.left + inset
+            val nearRight = line.band.right >= group.right - inset
             // 文档规则：左右都贴版心且够宽。
             val fullWidth = leftAligned && nearRight && bw >= options.splitFullWidthRatio * pageWidth
             // 左对齐 + 至少半版心也放行。标题同样适用：标题往往比正文短一截，不放行的话
@@ -110,9 +140,9 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
             val longLeftAligned = leftAligned && bw >= options.splitLeftAlignedRatio * pageWidth
             val eligible = eligibleRole && !centered && (fullWidth || longLeftAligned)
 
-            // 全局切点必须落在这一行里，否则它只是“短于切点的行”，按普通行缩放即可，
+            // 切点必须落在这一行里，否则它只是“短于切点的行”，按普通行缩放即可，
             // 不能算进 cleanRatio 的分母（否则每页都会被短行拉低到 weak）。
-            val reachable = eligible && cut > line.band.left && cut < line.band.right &&
+            val reachable = eligible && group.column > line.band.left && group.column < line.band.right &&
                 bw >= 0.25f * pageWidth
             var cutX = -1
             var inkAt = Float.MAX_VALUE
@@ -123,8 +153,8 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
                     // 先在中位切点附近找；找不到就把窗口放大一倍再找一次。
                     // 放宽窗口是安全的：真正保护“不劈字/不劈词”的是 ColumnInk.splitsWord。
                     val exempt = exemptFor(line)
-                    val g = chooseCut(profile(line), cut, win1, medH, exempt)
-                        ?: chooseCut(profile(line), cut, win1 * 2 + 4, medH, exempt)
+                    val g = chooseCut(profile(line), group.column, win1, medH, exempt, balanceFirst = true)
+                        ?: chooseCut(profile(line), group.column, win1 * 2 + 4, medH, exempt, balanceFirst = true)
                     if (g != null) {
                         cutX = g.first
                         inkAt = g.second
@@ -149,7 +179,9 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
 
         val ratio = if (splitCount == 0) 0f else clean.toFloat() / splitCount
         val weak = splitCount == 0 || ratio < options.cutCleanRatio
-        if (weak) {
+        // 条带分析时带内先不否决：一条只有两行的带判 weak 会白白丢掉切分，
+        // 否决权要留给合并后的整页（见 StripMerger）。
+        if (weak && !deferWeak) {
             // 整页退回“只放大不切”：保留 cutX 供调试，但所有 split 置 false。
             for ((k, v) in updated) updated[k] = v.copy(split = false, cuts = emptyList())
         }
@@ -159,7 +191,27 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
                 is Block.Figure -> block
             }
         }
-        return SplitOutcome(newBlocks, cut, ratio, splitCount, weak)
+        return SplitOutcome(newBlocks, pageColumn, ratio, splitCount, clean, weak)
+    }
+
+    /**
+     * 按左边距把候选行聚成“同缩进”组：以组内第一行的 left 为锚，超过容差就另起一组。
+     *
+     * 不用四舍五入分桶：缩进量常常刚好落在桶边界上，会被劈成两组。
+     */
+    private fun clusterByLeft(lines: List<TextLine>, tolerance: Int): List<List<TextLine>> {
+        if (lines.isEmpty()) return emptyList()
+        val sorted = lines.sortedBy { it.band.left }
+        val out = ArrayList<MutableList<TextLine>>()
+        for (line in sorted) {
+            val last = out.lastOrNull()
+            if (last != null && abs(line.band.left - last.first().band.left) <= tolerance) {
+                last.add(line)
+            } else {
+                out.add(mutableListOf(line))
+            }
+        }
+        return out
     }
 
     /**
@@ -208,6 +260,7 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
         win: Int,
         medianHeight: Float,
         gapExemptPx: Int,
+        balanceFirst: Boolean = false,
     ): Pair<Int, Float>? {
         if (p.width <= 0) return null
         if (options.latinSplitEnabled) {
@@ -215,7 +268,7 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
                 ?: return null
             return if (p.splitsWord(cut, medianHeight, gapExemptPx)) null else cut to 0f
         }
-        return gapNear(p, center, win, medianHeight, gapExemptPx)
+        return gapNear(p, center, win, medianHeight, gapExemptPx, balanceFirst)
     }
 
     /** 没有安全缝时的近似切点，只用于估计全局切分列，不用于实际切分。 */
@@ -245,22 +298,28 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
         win: Int,
         medianHeight: Float,
         gapExemptPx: Int = 0,
+        balanceFirst: Boolean = false,
     ): Pair<Int, Float>? {
         if (p.width <= 0) return null
         val thr = p.lowInkThreshold
 
-        val zero = bestRun(p, center, win, medianHeight, 2, gapExemptPx) { it == 0 }
+        val zero = bestRun(p, center, win, medianHeight, 2, gapExemptPx, balanceFirst) { it == 0 }
         if (zero != null) return zero to 0f
         // 中文 JPEG 截图里字缝常常只有 1 列，低墨列组的门槛放到 1 列；
         // 真正保护“不劈字”的是 [ColumnInk.splitsWord]，不是列组宽度。
-        val low = bestRun(p, center, win, medianHeight, 1, gapExemptPx) { it <= thr }
+        val low = bestRun(p, center, win, medianHeight, 1, gapExemptPx, balanceFirst) { it <= thr }
         if (low != null) return low to thr
         return null
     }
 
     /**
-     * 找满足 [accept] 的连续列组，按“离中心最近、同距离取更宽”挑，
-     * 并跳过会劈开西文单词的组。
+     * 找满足 [accept] 的连续列组，并跳过会劈开西文单词的组。
+     *
+     * [balanceFirst] = true 时按**两半均衡**挑（`max(左半, 右半)` 最小），否则按“离中心最近”挑。
+     *
+     * 分工很重要：估算全局列时用“离中心最近”，列才稳定在版心中线附近（否则每行都往
+     * 自己的中点跑，列会随着参差的右边缘漂移）；逐行贴回时用“两半均衡”，
+     * 在窗口内挑到最均衡的那一刀，等于白捡 `slotFor` 的倍率。
      */
     private inline fun bestRun(
         p: ColumnInk,
@@ -269,12 +328,15 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
         medianHeight: Float,
         minWidth: Int,
         gapExemptPx: Int,
+        balanceFirst: Boolean,
         accept: (Int) -> Boolean,
     ): Int? {
         val lo = max(p.left, center - win)
         val hi = min(p.left + p.width, center + win)
         if (hi <= lo) return null
+        val lineRight = p.left + p.width
         var best = -1
+        var bestHalf = Int.MAX_VALUE
         var bestDist = Int.MAX_VALUE
         var bestWidth = 0
         var i = lo - p.left
@@ -290,8 +352,19 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
             if (gapWidth < minWidth) continue
             val mid = p.left + (start + i - 1) / 2
             if (p.splitsWord(mid, medianHeight, gapExemptPx)) continue
+            val half = max(mid - p.left, lineRight - mid)
             val d = abs(mid - center)
-            if (d < bestDist || (d == bestDist && gapWidth > bestWidth)) {
+            val better = if (balanceFirst) {
+                half < bestHalf ||
+                    (half == bestHalf && d < bestDist) ||
+                    (half == bestHalf && d == bestDist && gapWidth > bestWidth)
+            } else {
+                d < bestDist ||
+                    (d == bestDist && half < bestHalf) ||
+                    (d == bestDist && half == bestHalf && gapWidth > bestWidth)
+            }
+            if (better) {
+                bestHalf = half
                 bestDist = d
                 bestWidth = gapWidth
                 best = mid

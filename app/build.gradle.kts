@@ -38,9 +38,10 @@ android {
         minSdk = 26
         targetSdk = 35
         // 0.5 是 v1-only 包：不再随包带 ONNX Runtime + 4.9MB 模型。
-        // versionCode 6 从上一版 2.0.0-beta1/0.5.0-full（code 5）升级；版本名保持 0.5.0。
-        versionCode = 6
-        versionName = "0.5.0"
+        // 0.5.1（code 7）修长图：分析图宽度优先 + gain 换算回源图 + 超长图条带分析。
+        // versionCode 6 从上一版 2.0.0-beta1/0.5.0-full（code 5）升级；0.5.1 再 +1。
+        versionCode = 7
+        versionName = "0.5.1"
     }
 
     buildFeatures {

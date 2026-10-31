@@ -19,6 +19,22 @@ class LayoutAnalyzer(private val options: AnalysisOptions = AnalysisOptions()) {
      * @param srcHeight 源图像素高。
      */
     fun analyze(image: GrayImage, srcWidth: Int = image.width, srcHeight: Int = image.height): PageLayout {
+        // P2：像素超预算就切条带（宽度不变），逐条分析后合并；否则照旧一次分析。
+        if (!AnalysisScale.needsStrips(image.width, image.height, options)) {
+            return analyzePage(image, srcWidth, srcHeight, deferWeakGate = false)
+        }
+        return StripLayoutAnalyzer(options) { strip, stripSrcHeight ->
+            // 带内不否决切分：一条只有两行的带判 weak 会白白丢掉切分，否决权留给合并后的整页。
+            analyzePage(strip, srcWidth, stripSrcHeight, deferWeakGate = true)
+        }.analyze(image, srcWidth, srcHeight)
+    }
+
+    private fun analyzePage(
+        image: GrayImage,
+        srcWidth: Int,
+        srcHeight: Int,
+        deferWeakGate: Boolean,
+    ): PageLayout {
         val w = image.width
         val h = image.height
         val safeSrcW = srcWidth.coerceAtLeast(1)
@@ -102,6 +118,7 @@ class LayoutAnalyzer(private val options: AnalysisOptions = AnalysisOptions()) {
                     rowCount = rowResult.bands.size,
                     figureCount = figureCount,
                     notes = listOf("too_few_long_lines"),
+                    longLineCount = metrics.longLineCount,
                 ),
             )
         }
@@ -110,6 +127,7 @@ class LayoutAnalyzer(private val options: AnalysisOptions = AnalysisOptions()) {
         if (MultiColumnDetector(options).detect(content, w, h, classified.blocks, metrics)) {
             return layoutWith(
                 classified, metrics, splitBlocks = classified.blocks, splitX = -1, cleanRatio = 0f,
+                splitCount = 0, splitClean = 0,
                 dark = background.isDark, image = image, srcW = safeSrcW, srcH = safeSrcH,
                 analysisScale = analysisScale, inkPixels = bin.inkPixels, threshold = bin.threshold,
                 rowCount = rowResult.bands.size, figureCount = figureCount,
@@ -117,11 +135,12 @@ class LayoutAnalyzer(private val options: AnalysisOptions = AnalysisOptions()) {
             )
         }
 
-        val split = ColumnSplitter(options).split(content, w, h, classified.blocks, metrics)
+        val split = ColumnSplitter(options).split(content, w, h, classified.blocks, metrics, deferWeakGate)
         val notes = if (split.weak) listOf("weak_cut") else emptyList()
         return layoutWith(
             classified, metrics, splitBlocks = split.blocks, splitX = split.splitX,
             cleanRatio = split.cleanRatio,
+            splitCount = split.splitCount, splitClean = split.cleanCount,
             dark = background.isDark, image = image, srcW = safeSrcW, srcH = safeSrcH,
             analysisScale = analysisScale, inkPixels = bin.inkPixels, threshold = bin.threshold,
             rowCount = rowResult.bands.size, figureCount = figureCount, notes = notes,
@@ -134,6 +153,8 @@ class LayoutAnalyzer(private val options: AnalysisOptions = AnalysisOptions()) {
         splitBlocks: List<Block>,
         splitX: Int,
         cleanRatio: Float,
+        splitCount: Int,
+        splitClean: Int,
         dark: Boolean,
         image: GrayImage,
         srcW: Int,
@@ -165,6 +186,9 @@ class LayoutAnalyzer(private val options: AnalysisOptions = AnalysisOptions()) {
             figureCount = figureCount,
             cleanRatio = cleanRatio,
             notes = notes,
+            splitCount = splitCount,
+            splitClean = splitClean,
+            longLineCount = metrics.longLineCount,
         ),
     )
 

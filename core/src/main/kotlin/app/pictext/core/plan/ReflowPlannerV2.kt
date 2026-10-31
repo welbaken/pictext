@@ -64,7 +64,9 @@ internal class ReflowPlannerV2(private val cutPolicy: CutPolicy = CutPolicy()) {
         s = max(s, 1f)
         if (options.forceReflow && s < 1f) s = 1f
 
-        val gain = s * layout.srcWidth / outW
+        // 与 v1 同一口径：v2 的 A 坐标就是 S 坐标（analysisScale 恒为 1），
+        // 但仍乘上 analysisScale，避免以后 v2 改成分块取样时这里又悄悄虚高。
+        val gain = s * layout.analysisScale * layout.srcWidth / outW
         if (!options.forceReflow && options.splitEnabled && gain < options.minGain) {
             notes.add("gain_too_small(${format(gain)})")
             return originalPlan(layout, outW, FallbackReason.GAIN_TOO_SMALL, notes)

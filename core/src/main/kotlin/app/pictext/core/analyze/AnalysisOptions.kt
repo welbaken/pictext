@@ -16,7 +16,24 @@ package app.pictext.core.analyze
  * 而分析只做一次。
  */
 data class AnalysisOptions(
-    val analysisMaxSide: Int = 1600,
+    /**
+     * 分析图宽度上限（P1）。**按宽度定标，不按长边**：长图的长边是高度，用长边定标会把
+     * 宽度压成一条（690×10305 → 107×1598），行带、字缝、中线全部失真。
+     */
+    val analysisMaxWidth: Int = 1600,
+
+    /**
+     * 单张分析图（或单条带）的像素预算（P2）。超过就切条带分析，宽度保持不变。
+     * 8MP ≈ 灰度 8MB + 二值 mask 8MB + contentMask 8MB，峰值约 25MB。
+     */
+    val analysisMaxPixels: Int = 8_000_000,
+
+    /** 条带高度（分析像素，P2 建议 2000–4000）与相邻条带的重叠（约一到两行高）。 */
+    val stripHeight: Int = 3000,
+    val stripOverlap: Int = 48,
+
+    /** 条带并行分析的线程数；0 = 按 CPU 核数自动（上限 4）。 */
+    val stripParallelism: Int = 0,
     val bgCell: Int = 32,
     val bgPercentileLight: Int = 92,
     val bgPercentileDark: Int = 8,
@@ -81,8 +98,22 @@ data class AnalysisOptions(
     val splitLeftAlignedRatio: Float = 0.50f,
 
     val cutWin0: Float = 0.06f,
-    val cutWin1: Float = 0.025f,
+
+    /**
+     * 逐行贴回全局列的窗口（× 分析图宽）。
+     *
+     * 原来 2.5% 太窄：缩进行/字宽不一的行明明贴着全局列，却因为窗口够不着而找不到缝，
+     * 只能被压小（audit 的 body_scale_inconsistent）。放宽到 5% 后仍由“两半均衡”代价
+     * 与 [ColumnInk.splitsWord] 保护，不会把切点拉飞。
+     */
+    val cutWin1: Float = 0.05f,
     val cutCleanRatio: Float = 0.70f,
+
+    /**
+     * 按段落左边距分组的容差（× 版心宽）。同缩进的段落共用一根切分列，
+     * 缩进引用/列表项因此也能切；只有 1 行的“孤立缩进行”仍走页面列，不会被单独劈开。
+     */
+    val splitGroupTolerance: Float = 0.02f,
     val longLineRatio: Float = 0.70f,
     val splitLineRatio: Float = 0.62f,
 

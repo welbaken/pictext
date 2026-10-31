@@ -97,8 +97,31 @@ class ReflowPlannerTest {
     }
 
     @Test
-    fun `narrow source falls back to original`() {
+    fun `gain is measured in source pixels when the analysis is downscaled`() {
+        // 分析图只有源图 1/4 宽：bodyScale 3.0 在源图上只是 0.75×，
+        // 而原图按屏宽显示是 1.0×，所以 gain ≈ 0.75 < 1.25，必须回退原图。
+        // 旧公式少乘 analysisScale，会算成 3.0 并把这一页当成“有收益”。
         val lines = listOf(
+            line(20, 44, left = 10, right = 270, cut = -1, split = false),
+            line(70, 94, left = 10, right = 270, cut = -1, split = false),
+        )
+        val plan = planner.plan(
+            layout(
+                listOf(Block.Paragraph(lines)),
+                srcW = 1080,
+                textLeft = 10,
+                textRight = 270,
+                analysisScale = 0.25f,
+            ),
+            ReflowOptions(outputWidth = 1080),
+        )
+        assertTrue("gain=${plan.gain}", plan.gain < 1.25f)
+        assertEquals(PlanMode.ORIGINAL, plan.mode)
+        assertEquals(FallbackReason.GAIN_TOO_SMALL, plan.fallback)
+    }
+
+    @Test
+    fun `narrow source falls back to original`() {        val lines = listOf(
             line(20, 60, left = 20, right = 580, cut = 300),
             line(80, 120, left = 20, right = 580, cut = 300),
         )
@@ -201,11 +224,12 @@ class ReflowPlannerTest {
         val plan = planner.plan(
             layout(
                 listOf(Block.Paragraph(lines)),
+                // 源图 2160 宽、按 1:1 分析：按屏宽（1080）显示时正文只有 0.5×，
+                // 重排后 1.05× → gain ≈ 2.1，是“真的放大”，只是切分失败（weak_cut）。
                 srcW = 2160,
                 textLeft = 10,
                 textRight = 1000,
                 notes = listOf("weak_cut"),
-                analysisScale = 0.5f,
             ),
             ReflowOptions(outputWidth = 1080),
         )

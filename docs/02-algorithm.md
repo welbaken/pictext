@@ -13,7 +13,7 @@
 | 坐标系 | 记号 | 说明 |
 |---|---|---|
 | 源图 | S | 原始图片像素，`srcW × srcH` |
-| 分析图 | A | 降采样后的图，长边 ≤ `analysisMaxSide`；`k = analysisW / srcW`（≤1） |
+| 分析图 | A | 降采样后的图，**宽度优先**：`k = min(1, analysisMaxWidth / srcW)`；像素超预算（`analysisMaxPixels`）时按高度切条带，条带内宽度不变。`k = analysisW / srcW`（≤1） |
 | 输出 | O | 重排结果，宽度 = 屏幕像素宽 `outW` |
 
 - 分析全部在 A 里做，`PageLayout` 里的矩形都是 A 坐标；
@@ -26,7 +26,13 @@
 data class GrayImage(val width: Int, val height: Int, val data: ByteArray) // 0..255
 
 data class AnalysisOptions(
-    val analysisMaxSide: Int = 1600,
+    // [P1] 宽度优先：长图的长边是高度，按长边定标会把宽度压成一条（690×10305 → 107×1598）。
+    val analysisMaxWidth: Int = 1600,
+    // [P2] 单张分析图/单条带的像素预算；超了就切条带，宽度不变。
+    val analysisMaxPixels: Int = 8_000_000,
+    val stripHeight: Int = 3000,
+    val stripOverlap: Int = 48,
+    val stripParallelism: Int = 0,       // 0 = 按 CPU 核数自动（上限 4）
     val bgCell: Int = 32,
     val bgPercentileLight: Int = 92,
     val bgPercentileDark: Int = 8,
@@ -185,12 +191,14 @@ if (gain < 1.25) return plan(ORIGINAL, weak_cut ? WEAK_CUT : GAIN_TOO_SMALL)
 | 格式 | JPEG/PNG/WebP 用 `BitmapFactory`；HEIF 在 API 28+ 用 `ImageDecoder`，API 26–27 直接报"格式不支持" |
 | 动图 | 只取第一帧 |
 | 透明 | 画到背景色（默认白）上，避免 PNG 透明区域变成黑 |
-| 尺寸 | 先用 `inJustDecodeBounds` 拿 `srcW/srcH`；解码时 `inSampleSize` 取 2 的幂，使长边 ≤ 2×`analysisMaxSide`，再用 Canvas 精确缩到 `analysisMaxSide` |
-| 超大图 | 8000×12000 的扫描件也照此处理，禁止全尺寸解码 |
+| 尺寸 | 先用 `inJustDecodeBounds` 拿 `srcW/srcH`；`AnalysisScale` 按**宽度**算出分析尺寸（`k = min(1, analysisMaxWidth/srcW)`）；解码时 `inSampleSize` 取 2 的幂，使解出的图不小于 2× 分析尺寸，再用 Canvas 精确缩到分析尺寸 |
+| 超大图 | 源图像素 > 8MP 时改走 `BitmapRegionDecoder` 条带解码（一条带 ≤ 8MP），宽度不变；灰度化按 256 行分块写进目标数组，不整图 `getPixels` |
 
 降采样因子 `k = analysisW / srcW` 必须记进 `PageLayout`，渲染时用。
 
-> **为什么不是 4K 分析**：行投影只需要能分辨"行"与"行间空白"。1600 长边下，22px 的字变成 8.8px，行间距仍有 5–6px，足够。分析分辨率翻倍不会提高切点质量，只会让耗时 ×4。
+> **为什么不是 4K 分析**：行投影只需要能分辨"行"与"行间空白"。宽度 1600 以内按 1:1 分析，22px 的字仍是 22px；再往上翻倍不会提高切点质量，只会让耗时 ×4。
+>
+> **[P1] 为什么改成按宽度定标**：长图的长边是高度，按长边降采样会把宽度压成一条（690×10305 → 107×1598，一行只剩 30 个像素列，字缝全是假的）。现在宽度优先，高度超预算时切条带（见 `StripLayoutAnalyzer`）。
 
 ---
 
@@ -618,7 +626,9 @@ sealed interface RenderItem {
 
 | 参数 | 默认 | 作用 | 调大的后果 |
 |---|---|---|---|
-| `analysisMaxSide` | 1600 | 分析分辨率 | 更准更慢（平方关系） |
+| `analysisMaxWidth` | 1600 | 分析分辨率（宽度上限，不再按长边） | 更准更慢（平方关系） |
+| `analysisMaxPixels` | 8_000_000 | 单张分析图/单条带的像素预算 | 更省内存；超了自动切条带 |
+| `stripHeight` / `stripOverlap` | 3000 / 48 | 条带高度与重叠（分析像素） | 重叠要盖住一行，否则跨边界行会被切两半 |
 | `bgCell` | 32 | 背景网格 | 更能跟光照，更容易受大色块影响 |
 | `bgCandidateDelta` | 22 | 纸色容差 | 更大→更多像素算背景，可能吃掉浅色图 |
 | `inkFloor / inkCeil` | 12 / 80 | 二值化夹取 | 上限更高→浅灰字更易丢 |

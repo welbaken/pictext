@@ -1,6 +1,7 @@
 package app.pictext.core
 
 import app.pictext.core.analyze.AnalysisOptions
+import app.pictext.core.analyze.AnalysisScale
 import app.pictext.core.analyze.LayoutAnalyzer
 import app.pictext.core.model.Block
 import app.pictext.core.model.FallbackReason
@@ -76,11 +77,11 @@ class RealImageRegressionTest {
         val pixels = IntArray(w * h)
         image.getRGB(0, 0, w, h, pixels, 0, w)
 
-        // 与 CLI/Android 一致的降采样规则：分析图长边 ≤ 1600。
-        val maxSide = maxOf(w, h)
-        val k = if (maxSide > 1600) 1600f / maxSide else 1f
-        val aw = maxOf(1, (w * k).roundToInt())
-        val ah = maxOf(1, (h * k).roundToInt())
+        // 与 CLI/Android 共用的定标规则：宽度优先（长图不再按长边压成一条）。
+        val analysisSize = AnalysisScale.size(w, h, analysis)
+        val aw = analysisSize.width
+        val ah = analysisSize.height
+        val k = analysisSize.factor
         val analysisPixels = if (k < 1f) {
             val scaled = BufferedImage(aw, ah, BufferedImage.TYPE_INT_RGB)
             val g = scaled.createGraphics()
@@ -232,6 +233,24 @@ class RealImageRegressionTest {
         assertEquals(PlanMode.ORIGINAL, r.plan.mode)
         assertTrue(r.plan.items.isEmpty())
         assertTrue("文字行不应为 0", r.layout.textLines().isNotEmpty())
+    }
+
+    /**
+     * P0 + P1 的长图回归：690×10305 的微博长图。
+     *
+     * 旧版本按“长边 1600”把它压成 107×1598，分析出来的行带/字缝全是假的，
+     * gain 又被虚高 6.4 倍（1.92 ≥ 1.25），于是不回退原图，而是渲染成左边一条 315px 宽的窄列。
+     * 现在：分析按宽度定标（690 宽、230 行），gain 按源图像素算（< 1.25），必须回退原图。
+     */
+    @Test
+    fun `ten thousand pixel long image falls back to the original`() {
+        val r = run("006v119zgy1iik2r1f4z0j30j67y9npf")
+        assertEquals("长图必须回退原图，不能输出窄列", PlanMode.ORIGINAL, r.plan.mode)
+        assertEquals(FallbackReason.GAIN_TOO_SMALL, r.plan.fallback)
+        assertTrue(r.plan.items.isEmpty())
+        assertTrue("gain=${r.plan.gain}", r.plan.gain < 1.25f)
+        assertEquals("分析必须按宽度定标", 1f, r.layout.analysisScale, 1e-6f)
+        assertTrue("长图的行数应接近真实行数: ${r.layout.textLines().size}", r.layout.textLines().size > 150)
     }
 
     private fun ReflowPlan.headingRatio(): Float {

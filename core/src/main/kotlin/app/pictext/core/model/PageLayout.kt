@@ -85,6 +85,12 @@ data class Diagnostics(
     val figureCount: Int = 0,
     val cleanRatio: Float = 0f,
     val notes: List<String> = emptyList(),
+    /** 参与切分的行数（cleanRatio 的分母）。 */
+    val splitCount: Int = 0,
+    /** 其中切点干净的行数（分子）。条带合并按总计数重算 cleanRatio。 */
+    val splitClean: Int = 0,
+    /** 长行数；条带合并后用它判断 too_few_long_lines。 */
+    val longLineCount: Int = 0,
 )
 
 /**

@@ -119,7 +119,12 @@ class ReflowPlanner {
         }
 
         // gain 以“原图按屏宽显示”为基准，而不是源图像素。
-        val gain = bodyScale * layout.srcWidth / outW
+        //
+        // [P0] bodyScale 是**分析图像素**上的倍率，必须先乘 analysisScale 换回源图像素。
+        // 旧写法 `bodyScale * srcWidth / outW` 少乘了这一项：分析图被按宽度定标后
+        // （长图尤其明显，690×10305 曾只剩 107px 宽），gain 会虚高 1/analysisScale 倍，
+        // 本该回退原图的页面被当成“有收益”，最后渲染成左边一条窄列。
+        val gain = bodyScale * layout.analysisScale * layout.srcWidth / outW
         val mode = if (splitLinesUsed.isEmpty()) PlanMode.NO_SPLIT else PlanMode.REFLOW
 
         // P0-5 / D-B：切分失败且没有收益 → 直接看原图，不再输出 1.03× 的伪重排。

@@ -1,6 +1,7 @@
 package app.pictext.cli
 
 import app.pictext.core.analyze.AnalysisOptions
+import app.pictext.core.analyze.AnalysisScale
 import app.pictext.core.analyze.LayoutAnalyzer
 import app.pictext.core.layout.GrayPageRegionSampler
 import app.pictext.core.layout.GrayPageTileSampler
@@ -131,11 +132,13 @@ fun main(args: Array<String>) {
     rgb.getRGB(0, 0, w, h, fullPixels, 0, w)
     val bgArgb = borderColor(fullPixels, w, h)
 
-    // 分析图长边 ≤ 1600，与 Android 侧一致；渲染仍用原图。
-    val maxSide = maxOf(w, h)
-    val k = if (maxSide > 1600) 1600f / maxSide else 1f
-    val aw = maxOf(1, (w * k).roundToInt())
-    val ah = maxOf(1, (h * k).roundToInt())
+    // 分析图宽度优先（与 Android 侧共用 AnalysisScale）：长图不再按长边压成一条；
+    // 像素超预算时由 LayoutAnalyzer 内部切条带。渲染仍用原图。
+    val analysisOptions = AnalysisOptions(latinSplitEnabled = latinSplit)
+    val analysisSize = AnalysisScale.size(w, h, analysisOptions)
+    val aw = analysisSize.width
+    val ah = analysisSize.height
+    val k = analysisSize.factor
     val analysisPixels = if (k < 1f) {
         val scaled = BufferedImage(aw, ah, BufferedImage.TYPE_INT_RGB)
         val sg = scaled.createGraphics()
@@ -148,7 +151,6 @@ fun main(args: Array<String>) {
     }
     val gray = Grayscale.fromArgb(aw, ah, analysisPixels, bgArgb)
 
-    val analysisOptions = AnalysisOptions(latinSplitEnabled = latinSplit)
     val planOptions = if (x4) {
         ReflowOptions(
             outputWidth = outWidth,
