@@ -6,9 +6,10 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.pictext.PicTextApp
-import app.pictext.core.model.FallbackReason
+import app.pictext.core.analyze.LayoutAnalyzer
+import app.pictext.core.model.Block
 import app.pictext.core.model.PlanMode
-import app.pictext.core.model.ReflowPlan
+import app.pictext.core.plan.PlanAuditor
 import app.pictext.core.plan.ReflowOptions
 import app.pictext.core.plan.ReflowPlanner
 import app.pictext.data.AppSettings
@@ -63,18 +64,31 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     /** 底栏三档。首次规划沿用“自动判断”，结果决定落在原图还是 ×2。 */
     private var level = ViewerLevel.X2
-    private var autoLevel = true
+
+    /** 首屏自动档位是否已定。只影响“默认选哪一档”，**不再当作**用户意图。 */
+    private var autoLevelApplied = false
+
+    /**
+     * 用户是否明确选过渡（底栏三档或双指缩放）。
+     *
+     * 这是 `ReflowOptions.forceReflow` 的**唯一**来源：只有用户自己要求时，才跳过
+     * “长行不足 / 收益不足 / 多栏”这些自动判断。首屏按计划结果自动挑档位
+     * （[autoLevelApplied]）不算用户意图——否则第 2 页起的所有页都会变成强制重排。
+     */
+    private var userForced = false
 
     /** 双指缩放相对当前档位基准的偏移；×2 档最多 2.0（= ×4），×4 档最多 1.0。 */
     private var zoom = 1f
-    private val scrollRatios = HashMap<Int, Float>()
+
+    /** 最近一次打开的 URI：全局失败页的“重试”用它重走 [open]。 */
+    private var lastUris: List<Uri> = emptyList()
 
     /** Activity 重建（旋转）时用来避免重复 intake；进程死亡后新 ViewModel 为 false。 */
-    /** 设置流是否已完成第一次发射（首次发射只是读盘，不算用户操作）。 */
-    private var settingsLoaded: Boolean = false
-
     var hasOpened: Boolean = false
         private set
+
+    /** 设置流是否已完成第一次发射（首次发射只是读盘，不算用户操作）。 */
+    private var settingsLoaded: Boolean = false
 
     init {
         viewModelScope.launch {
@@ -117,7 +131,14 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         entries = emptyList()
         pages = mutableListOf()
         sessions = mutableListOf()
+        lastUris = uris.take(5)
+        // 新的一张图重新回到“自动判断”：档位、缩放偏移、用户强制标记都要归零，
+        // 否则上一张图点过 ×2 会让这一张一上来就跳过回退判断。
         mode = ViewerMode.REFLOW
+        level = ViewerLevel.X2
+        zoom = 1f
+        autoLevelApplied = false
+        userForced = false
         _state.value = ViewerUiState.Loading
 
         openJob = viewModelScope.launch {
@@ -135,9 +156,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             }
             Log.d(TAG, "open: entries=${entries.size}")
             sessions = MutableList(entries.size) { null }
-            pages = entries.mapIndexed { index, entry ->
+            pages = entries.mapIndexed { _, entry ->
                 PageState(
-                    title = "",
                     key = entry.key,
                     loading = entry.failure == null,
                     failure = entry.failure,
@@ -163,6 +183,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                 current = 0,
                 showBars = true,
                 mode = mode,
+                level = level,
                 settings = settings,
                 viewportWidth = viewportWidth,
             )
@@ -174,11 +195,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     /** 切换底栏档位：原图 / ×2 / ×4。切分方式与档位互相独立。 */
     fun setLevel(newLevel: ViewerLevel) {
-        autoLevel = false
         val levelChanged = level != newLevel
         // 点同一个档位 = 回到该档的标准倍率（清掉双指缩放留下的偏移）。
         val zoomChanged = zoom != 1f
         if (!levelChanged && !zoomChanged) return
+        // 真正改变了档位/倍率才算“用户强制”：后面 replanAll 要跳过自动回退判断。
+        userForced = true
         level = newLevel
         zoom = 1f
         mode = if (newLevel == ViewerLevel.ORIGINAL) ViewerMode.ORIGINAL else ViewerMode.REFLOW
@@ -207,7 +229,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         }
         val newZoom = (m / snapped.baseMultiplier).coerceIn(0.5f, 2f)
         if (snapped == level && kotlin.math.abs(newZoom - zoom) < 0.01f) return
-        autoLevel = false
+        userForced = true
         level = snapped
         zoom = newZoom
         mode = ViewerMode.REFLOW
@@ -233,18 +255,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         ensureProcessed(safe + 1)
     }
 
-    fun setTargetSp(sp: Float) {
-        viewModelScope.launch { runCatching { container.settings.setTargetSp(sp) } }
-    }
-
-    fun setSplitMode(split: SplitMode) {
-        viewModelScope.launch { runCatching { container.settings.setSplitMode(split) } }
-    }
-
-    fun setRememberProgress(remember: Boolean) {
-        viewModelScope.launch { runCatching { container.settings.setRememberProgress(remember) } }
-    }
-
     fun setBarsVisible(visible: Boolean) {
         val ready = _state.value as? ViewerUiState.Ready ?: return
         if (ready.showBars == visible) return
@@ -256,25 +266,20 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         _state.value = ready.copy(showBars = !ready.showBars)
     }
 
-    fun closePage(index: Int) {
-        val ready = _state.value as? ViewerUiState.Ready ?: return
-        val session = sessions.getOrNull(index)
-        session?.close()
-        if (index in entries.indices) entries = entries.filterIndexed { i, _ -> i != index }
-        if (index in pages.indices) pages.removeAt(index)
-        if (index in sessions.indices) sessions.removeAt(index)
-        if (pages.isEmpty()) {
-            _state.value = ViewerUiState.Failed(FailureKind.UNREADABLE)
-        } else {
-            _state.value = ready.copy(
-                pages = pages.toList(),
-                current = ready.current.coerceIn(0, pages.lastIndex),
-            )
-        }
-    }
-
+    /**
+     * 重试。
+     *
+     * 两种状态必须分开处理：
+     * - **全局失败**（URI 打不开、全部 copy 失败）→ 用 [lastUris] 重走 [open]；
+     *   早期实现直接读 `state as? Ready`，于是这个状态下的“重试”按钮点了没有任何反应；
+     * - **单页失败** → 只关闭并重建这一页的会话。
+     */
     fun retry() {
-        val ready = _state.value as? ViewerUiState.Ready ?: return
+        val ready = _state.value as? ViewerUiState.Ready
+        if (ready == null) {
+            if (_state.value is ViewerUiState.Failed && lastUris.isNotEmpty()) open(lastUris)
+            return
+        }
         val index = ready.current
         val entry = entries.getOrNull(index) ?: return
         if (entry.failure != null || entry.file == null) return
@@ -289,7 +294,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     fun sessionAt(index: Int): DocumentSession? = sessions.getOrNull(index)
 
     fun reportScroll(index: Int, ratio: Float) {
-        scrollRatios[index] = ratio.coerceIn(0f, 1f)
         if (index in pages.indices) pages[index] = pages[index].copy(progress = ratio.coerceIn(0f, 1f))
     }
 
@@ -303,20 +307,19 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         publish()
     }
 
-    fun progressFor(index: Int): Float {
-        val fromMap = scrollRatios[index]
-        if (fromMap != null) return fromMap
-        return pages.getOrNull(index)?.progress ?: 0f
-    }
 
     private fun ensureProcessed(index: Int) {
         val entry = entries.getOrNull(index) ?: return
         if (entry.failure != null || entry.file == null) return
         if (sessions.getOrNull(index) != null) return
         if (!processing.add(index)) return
+        // 规划参数在主线程读一次再当快照传进后台：`level`/`zoom`/`viewportWidth` 都是
+        // 「主线程写、后台读」的字段，后台直接读既有可见性问题，也让第 2 页看到
+        // 第一页刚改过的档位（旧实现就是在这里把 autoLevel 误当成 forceReflow 的）。
+        val opts = options()
         val job = viewModelScope.launch {
             val result: Result<DocumentSession> = try {
-                Result.success(withContext(Dispatchers.Default) { createSession(index, entry) })
+                Result.success(withContext(Dispatchers.Default) { createSession(index, entry, opts) })
             } catch (e: CancellationException) {
                 throw e
             } catch (e: DecodeException) {
@@ -340,6 +343,19 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     multiplier = session.multiplier,
                     version = session.planVersion,
                 )
+                // 首屏档位由**第一页的真实计划**决定（原图 or ×2）；用户已经自己点过
+                // 就不覆盖。这里必须留在主线程：档位是 UI 状态，不是后台线程的局部变量。
+                if (index == 0 && !autoLevelApplied) {
+                    autoLevelApplied = true
+                    if (!userForced) {
+                        level = if (plan.mode == PlanMode.ORIGINAL) {
+                            ViewerLevel.ORIGINAL
+                        } else {
+                            ViewerLevel.X2
+                        }
+                        mode = if (level == ViewerLevel.ORIGINAL) ViewerMode.ORIGINAL else ViewerMode.REFLOW
+                    }
+                }
                 publish()
             }.onFailure { error ->
                 val kind = (error as? DecodeException)?.kind ?: FailureKind.INTERNAL
@@ -355,46 +371,34 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         job.invokeOnCompletion { pageJobs.remove(job) }
     }
 
-    private fun createSession(index: Int, entry: Entry): DocumentSession {
+    /**
+     * 建一页会话。**只在 `Dispatchers.Default` 上跑**，因此这里不读写任何共享可变状态：
+     * 规划参数 [opts] 是主线程算好的快照，档位决策在 [ensureProcessed] 的主线程回调里做。
+     */
+    private fun createSession(index: Int, entry: Entry, opts: ReflowOptions): DocumentSession {
         val file = entry.file ?: throw DecodeException(FailureKind.UNREADABLE, "no file")
         val started = System.nanoTime()
         Log.d(TAG, "session[$index]: decode start")
         val decoded = BitmapDecoder.decodeForAnalysis(file)
         Log.d(TAG, "session[$index]: decode ok ${decoded.srcWidth}x${decoded.srcHeight}")
         val source = SourceImage(file)
-        val opts = options()
 
         // 0.5 只发 v1：全页投影 + 原规划器。v2 仍留在 :core/:cli 做技术验证，不进 APK。
-        val peakPss = PeakPss.start()
-        val layout = app.pictext.core.analyze.LayoutAnalyzer().analyze(
-            decoded.gray,
-            decoded.srcWidth,
-            decoded.srcHeight,
-        )
+        val layout = LayoutAnalyzer().analyze(decoded.gray, decoded.srcWidth, decoded.srcHeight)
         val plan = ReflowPlanner().plan(layout, opts)
-        val audit = app.pictext.core.plan.PlanAuditor.audit(layout, plan)
-        val peakPssMb = peakPss.stop()
+        val audit = PlanAuditor.audit(layout, plan)
         val analysisMs = (System.nanoTime() - started) / 1_000_000
 
-        // 分享进入的第一页：按自动判断的结果决定初始档位（原图 or ×2），之后才由用户手动切换。
-        if (autoLevel && index == 0) {
-            autoLevel = false
-            level = if (plan.mode == PlanMode.ORIGINAL) ViewerLevel.ORIGINAL else ViewerLevel.X2
-        }
-        val strips = SourceStripCache(source, viewportWidth.coerceAtLeast(1))
+        val strips = SourceStripCache(source, opts.outputWidth)
         val renderer = TileRenderer(layout, plan, source, strips)
-        val mem = android.os.Debug.MemoryInfo()
-        android.os.Debug.getMemoryInfo(mem)
         Log.d(
-            "PicText",
+            TAG,
             "page=$index src=${decoded.srcWidth}x${decoded.srcHeight} analysis=${analysisMs}ms " +
                 "strategy=${layout.strategy} lines=${layout.textLines().size} " +
-                "figures=${layout.blocks.count { it is app.pictext.core.model.Block.Figure }} " +
+                "figures=${layout.blocks.count { it is Block.Figure }} " +
                 "split=${layout.splitX} clean=${layout.cleanRatio} scale=${plan.scale} gain=${plan.gain} " +
                 "mode=${plan.mode} fallback=${plan.fallback} " +
-                "audit=${audit.ok} pss=${mem.totalPss / 1024}MB javaHeap=${mem.dalvikPrivateDirty / 1024}MB " +
-                "nativeHeap=${mem.nativePrivateDirty / 1024}MB peakPss=${peakPssMb}MB " +
-                "notes=${plan.notes}",
+                "audit=${audit.ok} notes=${plan.notes}",
         )
         return DocumentSession(
             key = entry.key,
@@ -410,9 +414,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     /**
      * 计划参数。`level` 是用户当前选的三档：
      * - 原图：不进规划；
-     * - ×2：forceReflow=true，跳过“长行不足/收益不足/多栏”等前置判断，照常两段；
+     * - ×2：用户点过才算 `forceReflow`，跳过“长行不足/收益不足/多栏”等前置判断，照常两段；
      * - ×4：走**二次重排**（scaleMultiplier=2）——把 ×2 的结果当新图，字号翻倍、
      *   放不下的行按候选字缝再切到 2/4 段，而不是简单乘倍率再压回列宽。
+     *
+     * `forceReflow` 只看 [userForced]：首屏按计划结果自动挑档位不算用户意图，
+     * 否则第 2 页起会全部跳过硬回退（详见 [userForced] 的注释）。
      *
      * 双指缩放会把倍率在 [1, 2] 之间连续调整（见 [setZoomMultiplier]）；倍率 > 1 时
      * 就打开二次重排，段数上限同步放宽到 4。
@@ -421,7 +428,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         val app = getApplication<Application>()
         val density = app.resources.displayMetrics.scaledDensity
         val targetEm = (settings.targetSp * density).roundToInt().coerceAtLeast(14)
-        val forced = !autoLevel && level != ViewerLevel.ORIGINAL
+        val forced = userForced && level != ViewerLevel.ORIGINAL
         val multiplier = effectiveMultiplier()
         return ReflowOptions(
             outputWidth = viewportWidth.coerceAtLeast(1),
@@ -437,42 +444,17 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         )
     }
 
-    /**
-     * 丢弃现有分析结果，重跑当前页与下一页。
-     *
-     * v2 开关变的是**分析**（区域/顺序），不是规划参数，所以不能走 [replanAll]。
-     * 只重跑当前页与预取页：用户翻到别的页时 [ensureProcessed] 会补上。
-     */
-    private fun reanalyzeAll() {
-        // 还没有任何图片时什么都不用重分析。更要紧的是：这里会 `cancelAllJobs()`，
-        // 而 `open()` 也在同一个 job 列表里——早期版本会在“刚打开图片、正在拷文件”时
-        // 被设置项变更连坐取消，界面永远停在 Loading（V2-44）。
-        if (entries.isEmpty()) return
-        cancelAllJobs()
-        closeSessions()
-        sessions = MutableList(entries.size) { null }
-        for (i in pages.indices) {
-            if (entries.getOrNull(i)?.failure == null) {
-                pages[i] = pages[i].copy(loading = true, failure = null, plan = null)
-            }
-        }
-        publish()
-        val current = (_state.value as? ViewerUiState.Ready)?.current ?: 0
-        ensureProcessed(current)
-        ensureProcessed(current + 1)
-    }
-
     private fun replanAll() {
         var changed = false
         val opts = options()
         for (i in sessions.indices) {
             val session = sessions[i] ?: continue
             val newPlan = planner.plan(session.layout, opts)
-            val newStrips = if (session.strips.outputWidth == viewportWidth.coerceAtLeast(1)) {
+            val newStrips = if (session.strips.outputWidth == opts.outputWidth) {
                 session.strips
             } else {
                 // 旧条带可能仍被正在渲染的瓦片使用，交给 GC 回收，立即 recycle 会造成竞态。
-                SourceStripCache(session.sourceImage, viewportWidth.coerceAtLeast(1))
+                SourceStripCache(session.sourceImage, opts.outputWidth)
             }
             session.strips = newStrips
             session.plan = newPlan
@@ -493,7 +475,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         if (changed) publish()
     }
 
-    private fun updateReadySettings() {        val ready = _state.value as? ViewerUiState.Ready ?: return
+    private fun updateReadySettings() {
+        val ready = _state.value as? ViewerUiState.Ready ?: return
         _state.value = ready.copy(settings = settings, viewportWidth = viewportWidth)
     }
 
@@ -527,56 +510,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         cancelAllJobs()
         closeSessions()
         super.onCleared()
-    }
-
-    /** 供 UI 判断是否展示“分析中”提示。 */
-    fun analyzing(): Boolean = (state.value as? ViewerUiState.Ready)?.pages?.any { it.loading } == true
-
-    /** 兼容架构文档中的 PageState 字段命名。 */
-    fun fallbackOf(index: Int): FallbackReason =
-        pages.getOrNull(index)?.fallback ?: FallbackReason.NONE
-
-    fun planOf(index: Int): ReflowPlan? = pages.getOrNull(index)?.plan
-
-    fun modeOf(index: Int): PlanMode = pages.getOrNull(index)?.mode ?: PlanMode.ORIGINAL
-}
-
-/**
- * 分析期间的进程 PSS 峰值（V2-40 验收）。
- *
- * `Debug.getMemoryInfo` 是 Android 上唯一包含 native（ORT）/图形/模型的进程内存口径；
- * 单次读末尾会漏掉 ORT 推理峰值，所以用 50ms 守护线程采样取最大值。
- */
-private class PeakPss private constructor() {
-    @Volatile private var running = true
-    @Volatile private var peak = 0
-    private val thread = Thread {
-        val info = android.os.Debug.MemoryInfo()
-        while (running) {
-            android.os.Debug.getMemoryInfo(info)
-            if (info.totalPss > peak) peak = info.totalPss
-            try {
-                Thread.sleep(50)
-            } catch (_: InterruptedException) {
-                return@Thread
-            }
-        }
-    }.also {
-        it.isDaemon = true
-        it.name = "pictext-peak-pss"
-        it.start()
-    }
-
-    /** @return 峰值 PSS（MB）。 */
-    fun stop(): Int {
-        running = false
-        thread.interrupt()
-        thread.join(200)
-        return peak / 1024
-    }
-
-    companion object {
-        fun start(): PeakPss = PeakPss()
     }
 }
 

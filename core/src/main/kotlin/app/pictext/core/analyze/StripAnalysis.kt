@@ -41,16 +41,7 @@ class StripLayoutAnalyzer(
         val slices = slices(image.height)
         if (slices.size <= 1) return analyzeStrip(image, srcHeight)
 
-        val strips = slices.map { (top, height) ->
-            GrayImage(
-                width = image.width,
-                height = height,
-                data = image.data.copyOfRange(top * image.width, (top + height) * image.width),
-                backgroundColor = image.backgroundColor,
-            )
-        }
-        val stripSrcHeights = slices.map { (_, height) -> max(1, (height / scale).roundToInt()) }
-        val layouts = runSlices(strips, stripSrcHeights)
+        val layouts = runSlices(image, slices, scale)
         val parts = slices.mapIndexed { i, (top, height) -> StripPart(top, height, layouts[i]) }
         return StripMerger.merge(parts, image, srcWidth, srcHeight, scale, options)
     }
@@ -71,27 +62,60 @@ class StripLayoutAnalyzer(
         return out
     }
 
-    private fun runSlices(strips: List<GrayImage>, heights: List<Int>): List<PageLayout> {
-        val n = strips.size
-        val parallelism = (if (options.stripParallelism > 0) {
+    /** 并发条带数：**内存优先**，自动值最多 2（显式配置优先，见 [AnalysisOptions.stripParallelism]）。 */
+    private fun parallelismOf(count: Int): Int {
+        val requested = if (options.stripParallelism > 0) {
             options.stripParallelism
         } else {
-            min(4, Runtime.getRuntime().availableProcessors())
-        }).coerceAtLeast(1)
-        if (n <= 1 || parallelism <= 1) {
-            return strips.mapIndexed { i, strip -> analyzeStrip(strip, heights[i]) }
+            min(AUTO_PARALLELISM_CAP, Runtime.getRuntime().availableProcessors())
         }
-        val pool = Executors.newFixedThreadPool(min(n, parallelism)) { r ->
+        return min(count, requested).coerceAtLeast(1)
+    }
+
+    /**
+     * 逐条带分析。
+     *
+     * **取一条、分析一条、丢一条**：早期实现先把所有条带整页切成 `GrayImage` 列表再并行分析，
+     * 等于把整页灰度又复制一份，而 4 个并发条带各自持有 ink / mask / vrun —— 1080×20000
+     * 的长图峰值约 124MB，正是文档写明"不允许 OOM"的那一档。现在同一时刻最多只有
+     * [parallelismOf] 条存在，峰值 ≈ 整页灰度 + 2 × 单条带。
+     */
+    private fun runSlices(
+        image: GrayImage,
+        slices: List<Pair<Int, Int>>,
+        scale: Float,
+    ): List<PageLayout> {
+        val parallelism = parallelismOf(slices.size)
+        if (parallelism <= 1) {
+            return slices.map { (top, height) -> analyzeSlice(image, top, height, scale) }
+        }
+        val pool = Executors.newFixedThreadPool(parallelism) { r ->
             Thread(r, "pictext-strip").apply { isDaemon = true }
         }
         return try {
-            val futures = strips.mapIndexed { i, strip ->
-                pool.submit(Callable { analyzeStrip(strip, heights[i]) })
+            val futures = slices.map { (top, height) ->
+                pool.submit(Callable { analyzeSlice(image, top, height, scale) })
             }
             futures.map { it.get() }
         } finally {
             pool.shutdown()
         }
+    }
+
+    /** 复制一条条带并分析；条带本身在返回后即可回收。 */
+    private fun analyzeSlice(image: GrayImage, top: Int, height: Int, scale: Float): PageLayout {
+        val strip = GrayImage(
+            width = image.width,
+            height = height,
+            data = image.data.copyOfRange(top * image.width, (top + height) * image.width),
+            backgroundColor = image.backgroundColor,
+        )
+        return analyzeStrip(strip, max(1, (height / scale).roundToInt()))
+    }
+
+    private companion object {
+        /** 自动并发上限：>=3 时单张长图的峰值会重新逼近 100MB（见 runSlices 的注释）。 */
+        const val AUTO_PARALLELISM_CAP = 2
     }
 }
 

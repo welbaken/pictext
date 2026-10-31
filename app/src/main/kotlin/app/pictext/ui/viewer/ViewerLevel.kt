@@ -11,8 +11,6 @@ enum class ViewerLevel {
     X2,
     X4;
 
-    val isReflow: Boolean get() = this != ORIGINAL
-
     /** 该档在缩放轴上的基准倍率：×2 = 1.0，×4 = 2.0（×4 就是“基于 ×2 再放大一倍”）。 */
     val baseMultiplier: Float get() = when (this) {
         ORIGINAL -> 1f

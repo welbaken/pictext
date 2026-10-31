@@ -14,10 +14,6 @@ class BackgroundResult(
     val ink: ByteArray,
     /** 是否为深色页面（深底浅字）。 */
     val isDark: Boolean,
-    /** 真实背景曲面（0..255），主要供测试与调试。 */
-    val background: FloatArray,
-    /** 纸色种子。 */
-    val seed: Int,
 ) {
     fun inkAt(x: Int, y: Int, width: Int): Int = ink[y * width + x].toInt() and 0xFF
 }
@@ -35,7 +31,7 @@ class BackgroundEstimator(private val options: AnalysisOptions = AnalysisOptions
         val w = image.width
         val h = image.height
         if (w == 0 || h == 0) {
-            return BackgroundResult(ByteArray(0), false, FloatArray(0), 255)
+            return BackgroundResult(ByteArray(0), false)
         }
         val gray = image.data
         val n = w * h
@@ -118,7 +114,10 @@ class BackgroundEstimator(private val options: AnalysisOptions = AnalysisOptions
         }
 
         // 6. 双线性放大 + 7. ink
-        val bg = FloatArray(n)
+        //
+        // **只留 ink**：背景曲面本身（FloatArray，4 字节/像素）除了调试没有任何读者。
+        // 早期把它放进返回值，LayoutAnalyzer 会一直持有到整页分析结束——8MP 分析图就是
+        // 32MB 常驻，正好压在 BlockClassifier 分配竖直游程（又一个 4B/px）的那一刻。
         val ink = ByteArray(n)
         for (y in 0 until h) {
             val sy = (y + 0.5f) * ny / h - 0.5f
@@ -138,13 +137,12 @@ class BackgroundEstimator(private val options: AnalysisOptions = AnalysisOptions
                 val topV = v00 + (v10 - v00) * fx
                 val bottomV = v01 + (v11 - v01) * fx
                 val bgv = topV + (bottomV - topV) * fy
-                bg[rowBase + x] = bgv
                 val g = gray[rowBase + x].toInt() and 0xFF
                 val diff = if (dark) g - bgv else bgv - g
                 ink[rowBase + x] = diff.roundToInt().coerceIn(0, 255).toByte()
             }
         }
-        return BackgroundResult(ink, dark, bg, seed)
+        return BackgroundResult(ink, dark)
     }
 
     /** 供测试使用：判断两个值是否在容差内。 */

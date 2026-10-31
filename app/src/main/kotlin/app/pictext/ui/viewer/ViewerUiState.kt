@@ -11,21 +11,17 @@ enum class ViewerMode { REFLOW, ORIGINAL }
 
 /** 一页的 UI 状态。 */
 data class PageState(
-    val title: String,
     val key: String,
     val mode: PlanMode = PlanMode.ORIGINAL,
     val plan: ReflowPlan? = null,
     val fallback: FallbackReason = FallbackReason.NONE,
-    val originalAvailable: Boolean = true,
     val loading: Boolean = false,
     val failure: FailureKind? = null,
     val progress: Float = 0f,
     val version: Int = 0,
     /** 生成 [plan] 时用的重排倍率（1.0 = ×2 档，2.0 = ×4 档；双指缩放可在两者之间）。 */
     val multiplier: Float = 1f,
-) {
-    val tileCount: Int get() = plan?.tileCount ?: 0
-}
+)
 
 /** 阅读页整体状态。所有异常都必须收敛到 [Failed]。 */
 sealed interface ViewerUiState {

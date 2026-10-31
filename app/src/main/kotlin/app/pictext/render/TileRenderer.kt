@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
+import android.util.Log
 import app.pictext.core.model.PageLayout
 import app.pictext.core.model.RectI
 import app.pictext.core.model.ReflowPlan
@@ -21,6 +22,10 @@ import kotlin.math.roundToInt
 /**
  * 按 1024px 高的瓦片渲染计划。任何一张瓦片都只解码自己需要的源图条带，
  * 峰值内存与文档总高度无关。
+ *
+ * 渲染失败（条带解码 nil / 越界 / OOM）**不会抛出**，只会让相应区域留底色——
+ * 这是刻意的（失败不能带走进程），但不能是静默的：每条失败都会带 src/dest 进 logcat，
+ * 否则用户看到的"一块空白"将无从定位。
  */
 class TileRenderer(
     private val layout: PageLayout,
@@ -39,8 +44,19 @@ class TileRenderer(
             val canvas = Canvas(bitmap)
             canvas.drawColor(plan.backgroundColor)
             val tileRect = RectI(0, top, plan.outputWidth, top + h)
-            for (item in plan.itemsIntersecting(tileRect)) {
-                runCatching { drawItem(canvas, item, top) }
+            val visible = plan.itemsIntersecting(tileRect)
+            var failed = 0
+            for (item in visible) {
+                runCatching { drawItem(canvas, item, top) }.onFailure { e ->
+                    failed++
+                    Log.w(TAG, "tile $tileIndex: draw failed src=${item.src} dest=${item.dest}", e)
+                }
+            }
+            if (failed > 0) {
+                Log.w(
+                    TAG,
+                    "tile $tileIndex: $failed/${visible.size} 个渲染项失败，对应区域是底色（内容缺失）",
+                )
             }
             bitmap
         }
@@ -54,7 +70,11 @@ class TileRenderer(
 
         var srcY = item.src.top
         while (srcY < item.src.bottom) {
-            val strip = strips.stripFor(srcY) ?: break
+            val strip = strips.stripFor(srcY)
+            if (strip == null) {
+                Log.w(TAG, "strip decode failed at srcY=$srcY（item src=${item.src}），该段留底色")
+                break
+            }
             val stripTop = strip.srcRect.top
             val stripBottom = strip.srcRect.bottom
             val subTop = max(item.src.top, stripTop)
@@ -84,5 +104,9 @@ class TileRenderer(
             }
             srcY = stripBottom
         }
+    }
+
+    private companion object {
+        const val TAG = "PicTextRender"
     }
 }

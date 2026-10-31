@@ -92,7 +92,9 @@ object PlanAuditor {
         var prevTop = Int.MIN_VALUE
         for (item in plan.items) {
             val d = item.dest
-            if (d.left < 0 || d.top < 0 || d.right > plan.outputWidth || d.bottom > maxOf(plan.height, d.bottom)) {
+            // 下边界必须和 plan.height 比：早期写成 `d.bottom > maxOf(plan.height, d.bottom)`，
+            // 这个条件恒为 false，等于把"越下边界"整条漏掉了。
+            if (d.left < 0 || d.top < 0 || d.right > plan.outputWidth || d.bottom > plan.height) {
                 outOfBounds++
             }
             if (d.top < prevTop) nonMonotonic++
@@ -111,9 +113,15 @@ object PlanAuditor {
         var uiMax = 0f
         val bodyHeights = ArrayList<Int>()
         val headingHeights = ArrayList<Int>()
+        // `dest` 是 O 坐标、`src` 是 S 坐标，而 `src.width = A.width / k`，所以
+        // `dest.width / src.width = s × k`（s 是 A 空间的倍率，即 `plan.bodyScale`）。
+        // 必须先除以 analysisScale 换回 A 空间再比较：否则任何宽度 > analysisMaxWidth 的
+        // 截图（例如 2383 宽，k≈0.67）每一行都会被误报成 ~33% 的 body_scale_inconsistent。
+        // v2 的坐标本身就是 S 且 `analysisScale = 1`，这里退化为恒等变换。
+        val k = layout.analysisScale.takeIf { it > 0f && it.isFinite() } ?: 1f
         for (item in plan.items) {
             if (item !is RenderItem.TextRow) continue
-            val scale = if (item.src.width > 0) item.dest.width.toFloat() / item.src.width else 1f
+            val scale = if (item.src.width > 0) item.dest.width.toFloat() / item.src.width / k else 1f
             when (item.role) {
                 LineRole.BODY -> {
                     val dev = if (plan.bodyScale > 0f) abs(scale - plan.bodyScale) / plan.bodyScale else 0f

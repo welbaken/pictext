@@ -2,7 +2,6 @@ package app.pictext.data
 
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -46,16 +45,4 @@ class SettingsRepository(private val context: Context) {
                 rememberProgress = prefs[Keys.rememberProgress] ?: true,
             )
         }
-
-    suspend fun setTargetSp(sp: Float) {
-        context.settingsDataStore.edit { it[Keys.targetSp] = sp.coerceIn(12f, 24f) }
-    }
-
-    suspend fun setSplitMode(mode: SplitMode) {
-        context.settingsDataStore.edit { it[Keys.splitMode] = mode.name }
-    }
-
-    suspend fun setRememberProgress(remember: Boolean) {
-        context.settingsDataStore.edit { it[Keys.rememberProgress] = remember }
-    }
 }

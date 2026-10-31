@@ -46,10 +46,11 @@ class PlannerRoleTest {
         medH: Float = 24f,
         medGap: Float = 12f,
         notes: List<String> = emptyList(),
+        analysisScale: Float = 1f,
     ) = PageLayout(
         srcWidth = srcW,
         srcHeight = srcH,
-        analysisScale = 1f,
+        analysisScale = analysisScale,
         blocks = blocks,
         textLeft = textLeft,
         textRight = textRight,
@@ -198,8 +199,7 @@ class PlannerRoleTest {
     }
 
     @Test
-    fun `audit reports inconsistent body scale`() {
-        val lines = listOf(line(20, 44), line(70, 94))
+    fun `audit reports inconsistent body scale`() {        val lines = listOf(line(20, 44), line(70, 94))
         val page = layout(listOf(Block.Paragraph(lines)))
         val plan = planner.plan(page, ReflowOptions(outputWidth = 1080))
         val shrunk = plan.copy(
@@ -217,11 +217,55 @@ class PlannerRoleTest {
         assertTrue(audit.issues.any { it.startsWith("body_scale_inconsistent") })
     }
 
+    /**
+     * 回归：`dest.bottom` 的上界检查曾经写成 `> maxOf(plan.height, d.bottom)`（恒为 false），
+     * "渲染项越出计划高度"这条审计从来没有生效过。
+     */
+    @Test
+    fun `audit reports an item below the plan height`() {
+        val lines = listOf(line(20, 44), line(70, 94))
+        val page = layout(listOf(Block.Paragraph(lines)))
+        val plan = planner.plan(page, ReflowOptions(outputWidth = 1080))
+        val last = plan.items.last()
+        val overflow = plan.copy(
+            items = plan.items.map { item ->
+                if (item === last && item is RenderItem.TextRow) {
+                    item.copy(dest = RectI(item.dest.left, item.dest.top, item.dest.right, plan.height + 8))
+                } else {
+                    item
+                }
+            },
+        )
+        val audit = PlanAuditor.audit(page, overflow)
+        println(audit.summary())
+        assertFalse(audit.ok)
+        assertTrue(audit.issues.toString(), audit.issues.any { it.startsWith("items_out_of_bounds") })
+    }
+
     @Test
     fun `plan exposes body scale for audit`() {
         val lines = listOf(line(20, 44), line(70, 94))
         val plan: ReflowPlan = planner.plan(layout(listOf(Block.Paragraph(lines))), ReflowOptions(outputWidth = 1080))
         assertEquals(plan.scale, plan.bodyScale, 0.0001f)
         assertTrue(plan.bodyScale > 1f)
+    }
+
+    /**
+     * 回归：2383 宽的截图在分析图里被降到 1600（k ≈ 0.671），`dest.width / src.width`
+     * 天然只有 `bodyScale` 的 2/3。审计必须先除以 `analysisScale` 再比，否则每一行都会被
+     * 误报成 `body_scale_inconsistent(0.33)`（真实样例 `Screenshot 2026-10-30 164821.png` 踩过）。
+     */
+    @Test
+    fun `audit accounts for the analysis downscale`() {
+        val k = 1600f / 2383f
+        val lines = listOf(line(20, 44), line(70, 94), line(120, 144, left = 120, right = 900))
+        val page = layout(listOf(Block.Paragraph(lines)), srcW = 2383, analysisScale = k)
+        val plan = planner.plan(page, ReflowOptions(outputWidth = 1080))
+        val audit = PlanAuditor.audit(page, plan)
+        println("k=$k bodyScale=${plan.bodyScale} ${audit.summary()}")
+        assertTrue("k<1 不该被误报成倍率不一致: ${audit.issues}", audit.ok)
+        // 反向确认：把同一份计划当成 k=1 的坐标去审，必须报出来。
+        val naive = PlanAuditor.audit(page.copy(analysisScale = 1f), plan)
+        assertTrue("审计必须能发现真实的倍率偏差", !naive.ok)
     }
 }

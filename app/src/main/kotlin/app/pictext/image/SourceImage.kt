@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.BitmapRegionDecoder
 import android.media.ExifInterface
+import android.util.Log
 import app.pictext.core.model.RectI
 import java.io.Closeable
 import java.io.File
@@ -61,17 +62,21 @@ class SourceImage(file: File) : Closeable {
                 opts,
             )
         } catch (e: OutOfMemoryError) {
+            Log.w(TAG, "decodeRegion OOM src=$src sample=$sample retry=${allowRetry}")
             if (allowRetry) return decodeClipped(src, sample * 2, false) else return null
         } catch (t: Throwable) {
+            Log.w(TAG, "decodeRegion 失败 src=$src sample=$sample", t)
             return null
         }
         if (raw == null) {
+            Log.w(TAG, "decodeRegion 返回 null src=$src sample=$sample retry=${allowRetry}")
             return if (allowRetry) decodeClipped(src, sample * 2, false) else null
         }
         if (orientation == ExifInterface.ORIENTATION_NORMAL) return raw
         return try {
             rotateToDisplay(raw, rawRect, src, sample)
         } catch (t: Throwable) {
+            Log.w(TAG, "rotateToDisplay 失败 src=$src orientation=$orientation", t)
             raw.recycle()
             null
         }
@@ -107,5 +112,9 @@ class SourceImage(file: File) : Closeable {
 
     override fun close() {
         runCatching { decoder.recycle() }
+    }
+
+    private companion object {
+        const val TAG = "PicTextImage"
     }
 }

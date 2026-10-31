@@ -35,6 +35,7 @@ import androidx.compose.ui.window.DialogProperties
 import app.pictext.R
 import app.pictext.core.model.RectI
 import app.pictext.image.SourceImage
+import app.pictext.render.BitmapRecycler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.max
@@ -59,8 +60,9 @@ fun FigureDialog(
     DisposableEffect(bitmap) {
         // 组合期把值取成局部变量：直接在 onDispose 里读 bitmap 会读到已经替换后的新帧，
         // 把正在显示的那张回收掉（绘制时就会抛 “trying to use a recycled bitmap”）。
+        // 回收本身排到下一帧，见 BitmapRecycler。
         val held = bitmap
-        onDispose { held?.takeIf { !it.isRecycled }?.recycle() }
+        onDispose { BitmapRecycler.recycle(held) }
     }
 
     Dialog(

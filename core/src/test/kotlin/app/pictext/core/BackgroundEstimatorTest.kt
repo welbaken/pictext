@@ -42,7 +42,7 @@ class BackgroundEstimatorTest {
         img.fillRect(28, 28, 36, 36, 0)
         val r = estimator.estimate(img)
         assertTrue(
-            "card ink=${r.inkAt(20, 20, 64)} seed=${r.seed} bg=${r.background[20 * 64 + 20]}",
+            "card ink=${r.inkAt(20, 20, 64)}",
             r.inkAt(20, 20, 64) < 5,
         )
         assertTrue("text ink=${r.inkAt(32, 32, 64)}", r.inkAt(32, 32, 64) > 100)

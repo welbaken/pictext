@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import app.pictext.image.SourceImage
 import app.pictext.image.ViewportFrame
+import app.pictext.render.BitmapRecycler
 import app.pictext.image.ViewportImageLoader
 import kotlinx.coroutines.delay
 import kotlin.math.max
@@ -71,9 +72,10 @@ fun OriginalPage(
 
     // 视口帧换掉时立即回收上一张，避免反复缩放/拖动时把几十张整屏位图留给 GC。
     // 注意：必须在组合期把值取成局部变量，否则 onDispose 里读到的是已经替换后的新帧。
+    // 回收排到下一帧（BitmapRecycler）：display list 可能还持有这一帧的位图。
     DisposableEffect(loaded) {
         val held = loaded
-        onDispose { held?.bitmap?.takeIf { !it.isRecycled }?.recycle() }
+        onDispose { BitmapRecycler.recycle(held?.bitmap) }
     }
 
     val baseScale = if (viewport.width > 0) viewport.width.toFloat() / source.width else 1f

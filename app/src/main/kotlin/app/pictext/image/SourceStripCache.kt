@@ -2,6 +2,7 @@ package app.pictext.image
 
 import android.graphics.Bitmap
 import android.graphics.Rect
+import android.util.Log
 import app.pictext.core.model.RectI
 import kotlin.math.max
 import kotlin.math.min
@@ -59,7 +60,12 @@ class SourceStripCache(
         }
         val top = index * stripSrcHeight
         val rect = RectI(0, top, source.width, min(source.height, top + stripSrcHeight))
-        val bitmap = source.decodeRegion(rect, sample) ?: return null
+        val bitmap = source.decodeRegion(rect, sample)
+        if (bitmap == null) {
+            // 不抛异常是有意的（失败也不能带走进程），但必须留痕：调用方会把这块留成底色。
+            Log.w("PicText", "strip $index ($rect, sample=$sample) 解码失败，该区域将留底色")
+            return null
+        }
         val strip = Strip(rect, bitmap)
         synchronized(lock) {
             cache[index] = strip

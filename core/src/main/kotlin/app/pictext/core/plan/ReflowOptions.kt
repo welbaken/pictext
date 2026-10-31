@@ -33,7 +33,6 @@ data class ReflowOptions(
      * 更宽的是正文插图，居中排版。0.35 来自实测：聊天头像 ~5%、气泡 ~40–90%、
      * 文档插图通常 ≥50%。 */
     val narrowFigureRatio: Float = 0.35f,
-    val gapClamp: IntRange = 6..40,
     val paragraphGapRatio: Float = 1.35f,
     val splitEnabled: Boolean = true,
     val forceTwo: Boolean = false,

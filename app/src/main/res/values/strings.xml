@@ -3,10 +3,7 @@
     <string name="app_name">图读</string>
 
     <string name="home_title">图读</string>
-    <string name="home_tagline">把长图读成书：小屏幕上的重排阅读</string>
-    <string name="home_description">把字很小的长图分享到图读，按行左右对半切开再插回去，字号放大一倍。不识别文字、不联网、图片不离开这台设备。</string>
     <string name="home_pick">选择图片</string>
-    <string name="home_privacy">本应用没有联网权限，图片不会离开这台设备。</string>
     <string name="home_share_hint">在其他 APP 里试试分享图片到图读。</string>
 
     <string name="loading_reading">正在读取图片…</string>
@@ -35,37 +32,16 @@
     <string name="fallback_too_tall">重排结果过长，已显示原图</string>
     <string name="fallback_no_ink">这张图里没有可读内容，已显示原图</string>
 
-    <string name="mode_reflow">重排</string>
-    <string name="mode_original">原图</string>
     <string name="back">返回</string>
-    <string name="more">更多</string>
     <string name="page_indicator">%1$d / %2$d</string>
     <string name="figure_dialog_title">图块 · 点击外部关闭</string>
     <string name="figure_content_description">图块，点按查看大图</string>
     <string name="close">关闭</string>
-    <string name="figure_open">查看大图</string>
 
-    <string name="settings">设置</string>
-    <string name="settings_font_size">字号</string>
-    <string name="settings_font_small">小</string>
-    <string name="settings_font_standard">标准</string>
-    <string name="settings_font_large">大</string>
-    <string name="settings_split">切分方式</string>
-    <string name="settings_split_auto">自动</string>
-    <string name="settings_split_twocol">左右对半</string>
-    <string name="settings_split_off">关闭</string>
-    <string name="settings_remember">阅读位置</string>
-    <string name="settings_remember_on">记住</string>
-    <string name="settings_remember_off">不记住</string>
-    <string name="settings_privacy">本应用没有联网权限，图片不会离开这台设备。</string>
 
     <string name="level_original">原图</string>
     <string name="level_x2">×2</string>
     <string name="level_x4">×4</string>
-    <string name="split_chip_auto">切分 自动</string>
-    <string name="split_chip_twocol">切分 双栏</string>
-    <string name="split_chip_off">切分 关闭</string>
-    <string name="font_size_button">字号设置</string>
     <string name="progress_percent">%1$d%%</string>
 
     <string name="about">关于</string>
@@ -75,11 +51,6 @@
 
     <string name="toast_max_images">最多一次读 5 张</string>
     <string name="toast_no_image">没有收到图片</string>
-    <string name="toast_open_failed">图片打不开</string>
-    <string name="toast_image_cleaned">图片已清理</string>
 
     <string name="cd_image_content">重排后的阅读内容</string>
-    <string name="cd_original_image">原图</string>
-    <string name="cd_toggle_bars">显示或隐藏工具栏</string>
-    <string name="empty_page">这一页没有内容</string>
 </resources>

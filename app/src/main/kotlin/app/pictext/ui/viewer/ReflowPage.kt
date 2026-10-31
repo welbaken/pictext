@@ -44,6 +44,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.pictext.R
 import app.pictext.core.model.RenderItem
+import app.pictext.render.BitmapRecycler
 import app.pictext.session.DocumentSession
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlin.math.abs
@@ -214,9 +215,10 @@ private fun TileItem(
     }
     // 位图换掉或瓦片滚出屏幕就立刻回收：×4 的瓦片 1080×1024 一张约 4MB，
     // 只靠 GC 回收的话，快速滚动会把几十张丢给 finalizer，低内存机器直接 OOM。
+    // 回收本身延迟一帧（见 BitmapRecycler）：display list 可能还持有这一帧的位图。
     DisposableEffect(bitmap) {
         val held = bitmap
-        onDispose { if (held != null && !held.isRecycled) held.recycle() }
+        onDispose { BitmapRecycler.recycle(held) }
     }
     Box(modifier = modifier.background(background)) {
         val bmp = bitmap
