@@ -92,9 +92,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
                     updateReadySettings()
                     return@collect
                 }
-                if (old.smartLayout != newSettings.smartLayout) {
-                    Log.d(TAG, "settings: smartLayout ${old.smartLayout}->${newSettings.smartLayout} entries=${entries.size}")
-                    // 版式开关改变的是“分析结果”本身，不能只重新规划（docs/07 §4.10）。
+                if (old.enhancedReflow != newSettings.enhancedReflow) {
+                    Log.d(
+                        TAG,
+                        "settings: enhancedReflow ${old.enhancedReflow}->${newSettings.enhancedReflow} " +
+                            "entries=${entries.size}",
+                    )
+                    // 强化重排切换的是“整条分析链路”，不能只重新规划。
                     reanalyzeAll()
                 } else if (old.targetSp != newSettings.targetSp ||
                     old.splitMode != newSettings.splitMode
@@ -252,13 +256,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { runCatching { container.settings.setRememberProgress(remember) } }
     }
 
-    /** 打开/关闭 v2 版式识别（β）。改的是分析链路，会重跑当前页与下一页。 */
-    fun setSmartLayout(enabled: Boolean) {
-        viewModelScope.launch { runCatching { container.settings.setSmartLayout(enabled) } }
+    /** 打开/关闭「强化重排」：关闭=只走 v1，打开=只走 v2。改的是分析链路，会重跑全部页面。 */
+    fun setEnhancedReflow(enabled: Boolean) {
+        viewModelScope.launch { runCatching { container.settings.setEnhancedReflow(enabled) } }
     }
 
-    /** 当前是否已启用 v2（设置项 + 模型可用性都要满足才真正生效）。 */
-    fun smartLayoutEnabled(): Boolean = settings.smartLayout && container.layoutModelReady()
+    /** 当前是否已启用强化重排（设置项 + 模型可用性都要满足才真正生效）。 */
+    fun enhancedReflowEnabled(): Boolean = settings.enhancedReflow && container.layoutModelReady()
 
     fun setBarsVisible(visible: Boolean) {
         val ready = _state.value as? ViewerUiState.Ready ?: return
@@ -381,7 +385,8 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
         // v2：模型区域 + 阅读顺序；模型不可用 / 审计失败 / 竖排都会自动回退到 v1，
         // 回退是无感的（docs/07 §4.9），所以这里不需要 try/catch 兜底模型异常。
-        val detector = if (settings.smartLayout) container.layoutDetector() else null
+        // v2 只在用户显式打开「强化重排」时启用；默认 null → 只跑 v1。
+        val detector = if (settings.enhancedReflow) container.layoutDetector() else null
         Log.d(TAG, "session[$index]: detector=${detector != null}")
         val sampler = if (detector != null) AndroidTileSampler(source) else null
         val bg = decoded.gray.backgroundColor

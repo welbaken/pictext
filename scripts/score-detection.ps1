@@ -137,7 +137,7 @@ Get-ChildItem "testdata/layout/ground-truth" -Filter "*.json" | Sort-Object Name
 
 if ($rowsOut.Count -eq 0) { throw "没有任何结果：先跑 scripts/score-v2.ps1 生成 regions.json" }
 
-$v2Rows = @($rowsOut | Where-Object { $_.strategy -eq "DOC_LAYOUT" })
+$v2Rows = @($rowsOut | Where-Object { $_.strategy -eq "DOC_LAYOUT" -and [string]::IsNullOrEmpty($_.fallback) })
 $meanRecall = ($v2Rows | Measure-Object recall -Average).Average
 $meanPrec = ($v2Rows | Measure-Object precision -Average).Average
 $meanLine = ($v2Rows | Measure-Object lineCov -Average).Average
@@ -147,7 +147,7 @@ $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine("# v2 区域检测评分（对 HTML 真值）")
 [void]$sb.AppendLine("")
 [void]$sb.AppendLine("- 生成时间：$(Get-Date -Format 'yyyy-MM-dd HH:mm')，网格 ${Cell}px，类别同族才算覆盖")
-[void]$sb.AppendLine("- 只统计 v2 真正接管的 $($v2Rows.Count)/$($rowsOut.Count) 张（回退 v1 的页不计入均值）")
+[void]$sb.AppendLine("- 只统计 v2 真正成功的 $($v2Rows.Count)/$($rowsOut.Count) 张（强化重排失败显示原图的页不计入均值）")
 [void]$sb.AppendLine(("- 平均召回 **{0:P1}**，平均准确 **{1:P1}**，平均行覆盖 **{2:P1}**，最低召回 {3:P1}" -f `
             $meanRecall, $meanPrec, $meanLine, $minRecall))
 [void]$sb.AppendLine("")

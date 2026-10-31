@@ -1,7 +1,7 @@
-# V1 vs 混合（v2 优先、失败回退 v1）的收益量化。
+# V1 vs V2（强化重排，失败显示原图）的收益量化。
 #
 # 为什么单独一个脚本：`report-v2.csv` 只记 v2 自己的数字，看不出“相比 v1 到底好了多少”。
-# 这里对同一张图跑两遍（v1-only / v2+回退），用**用户能感知的指标**对比：
+# 这里对同一张图跑两遍（v1-only / v2-only），用**用户能感知的指标**对比：
 #   - bodyScale：正文字号放大倍率（决定“字有多大”）
 #   - mode：是否真的重排（ORIGINAL 表示只能看原图）
 #   - lines：被重排的文字行数（决定“有多少内容受益”）
@@ -69,7 +69,7 @@ foreach ($f in $files) {
     $v1Lines = Parse $l1 'lines=(\d+)' '0'
     $v1Height = Parse $l1 'output=\d+x(\d+)' '0'
 
-    # ---- v2（含回退）----
+    # ---- v2（强化重排；失败显示原图，不回退 v1）----
     $t1 = Get-Date
     $l2 = (& $cli $f.FullName $outV2 --layout --model $Model 2>&1 | Out-String)
     $ms2 = [int]((Get-Date) - $t1).TotalMilliseconds
@@ -81,13 +81,13 @@ foreach ($f in $files) {
     $v2LinesRaw = Parse $l2 'lines=(\d+)' '0'
     $v2Mode = Parse $l2 'mode=(\w+)' '?'
 
-    # 混合结果：v2 接管就用 v2，否则就是 v1（代码路径完全一致）
-    $tookV2 = ($strategy -eq "DOC_LAYOUT")
-    $hybScale = if ($tookV2) { [double]$v2ScaleRaw } else { [double]$v1Scale }
-    $hybLineH = if ($tookV2) { [double]$v2LineHRaw } else { [double]$v1LineH }
-    $hybLines = if ($tookV2) { [int]$v2LinesRaw } else { [int]$v1Lines }
-    $hybMode = if ($tookV2) { $v2Mode } else { $v1Mode }
-    $hybHeight = if ($tookV2) { [int]$v2Height } else { [int]$v1Height }
+    # v2 是否成功（失败时不再回退 v1，而是显示原图）
+    $v2Ok = ($strategy -eq "DOC_LAYOUT" -and $v2Code -eq "none")
+    $hybScale = [double]$v2ScaleRaw
+    $hybLineH = [double]$v2LineHRaw
+    $hybLines = [int]$v2LinesRaw
+    $hybMode = $v2Mode
+    $hybHeight = [int]$v2Height
 
     # **可比的“字号”**：输出图里一行字的像素高度。
     # - REFLOW/NO_SPLIT：planner 的 scale × 该布局的行高中位数；
@@ -103,7 +103,7 @@ foreach ($f in $files) {
             elseif ($v1Eff -gt 0) { $hybEff / $v1Eff } else { 1.0 }
     $rows.Add([pscustomobject]@{
             name      = $name
-            v2        = $tookV2
+            v2        = $v2Ok
             code      = $v2Code
             v1Mode    = $v1Mode
             hybMode   = $hybMode
@@ -120,7 +120,7 @@ foreach ($f in $files) {
             msV2      = $ms2
         })
     Write-Host ("{0,-40} v2={1,-5} 字号 {2,5:N1}->{3,5:N1}px gain={4,5:N2} lines {5,3}->{6,3}" -f `
-            $name, $tookV2, $v1Eff, $hybEff, $gain, $v1Lines, $hybLines)
+            $name, $v2Ok, $v1Eff, $hybEff, $gain, $v1Lines, $hybLines)
 }
 
 Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
@@ -128,7 +128,7 @@ Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 if ($rows.Count -eq 0) { throw "没有任何可比对的结果" }
 
 $v2Rows = @($rows | Where-Object { $_.v2 })
-$v1Rows = @($rows | Where-Object { -not $_.v2 })
+$v2FailRows = @($rows | Where-Object { -not $_.v2 })
 
 $better = @($v2Rows | Where-Object { $_.gain -ge 1.05 }).Count
 $same = @($v2Rows | Where-Object { $_.gain -gt 0.98 -and $_.gain -lt 1.05 }).Count
@@ -142,33 +142,33 @@ $meanGain = if ($v2Rows.Count -gt 0) { ($v2Rows | Measure-Object gain -Average).
 $v1Original = @($rows | Where-Object { $_.v1Mode -eq "ORIGINAL" })
 $rescued = @($v1Original | Where-Object { $_.hybMode -ne "ORIGINAL" }).Count
 
-# 行数收益：v2 接管页里，重排文字行的净增
+# 行数收益：v2 成功的页里，重排文字行的净增
 $lineDelta = @($v2Rows | ForEach-Object { $_.hybLines - $_.v1Lines } | Measure-Object -Sum).Sum
 $meanMsV1 = [int](($rows | Measure-Object msV1 -Average).Average)
 $meanMsV2 = [int](($rows | Measure-Object msV2 -Average).Average)
 
 $sb = New-Object System.Text.StringBuilder
-[void]$sb.AppendLine("# v1 vs 混合（v2 优先 + 回退）收益对比")
+[void]$sb.AppendLine("# v1 vs v2（强化重排，失败显示原图）收益对比")
 [void]$sb.AppendLine("")
 [void]$sb.AppendLine("- 生成时间：$(Get-Date -Format 'yyyy-MM-dd HH:mm')，样本 $($rows.Count) 张")
-[void]$sb.AppendLine("- 混合 = 同一张图先走 v2；v2 回退时**代码路径与 v1 完全相同**，所以回退页的指标就是 v1 的指标")
+[void]$sb.AppendLine("- v2 = 阅读页打开「强化重排」；**v2 失败不再回退 v1，而是显示原图**（mode=ORIGINAL）")
 [void]$sb.AppendLine("")
 [void]$sb.AppendLine("## 汇总")
 [void]$sb.AppendLine("")
 [void]$sb.AppendLine("| 指标 | 数值 |")
 [void]$sb.AppendLine("|---|---|")
-[void]$sb.AppendLine("| v2 接管 | $($v2Rows.Count)/$($rows.Count)（其余 $($v1Rows.Count) 张回退 v1） |")
+[void]$sb.AppendLine("| v2 成功 | $($v2Rows.Count)/$($rows.Count)（其余 $($v2FailRows.Count) 张失败显示原图） |")
 [void]$sb.AppendLine("| 字号明显变大（≥1.05×） | $better 张 |")
 [void]$sb.AppendLine("| 字号基本持平（0.98–1.05×） | $same 张 |")
 [void]$sb.AppendLine("| 字号变小（≤0.98×，**回归**） | $worse 张 |")
-[void]$sb.AppendLine("| 字号放大中位数 | **${medianGain}×**（均值 ${meanGain}×） |")
+[void]$sb.AppendLine("| 字号放大中位数 | **${medianGain}×**（均值 $('{0:N2}' -f $meanGain)×） |")
 [void]$sb.AppendLine("| 重排文字行净增 | $lineDelta 行 |")
-[void]$sb.AppendLine("| v1 只能看原图、混合后能重排 | $rescued/$($v1Original.Count) 张 |")
-[void]$sb.AppendLine("| 平均耗时 v1 → 混合 | ${meanMsV1}ms → ${meanMsV2}ms |")
+[void]$sb.AppendLine("| v1 只能看原图、v2 成功重排 | $rescued/$($v1Original.Count) 张 |")
+[void]$sb.AppendLine("| 平均耗时 v1 → v2 | ${meanMsV1}ms → ${meanMsV2}ms |")
 [void]$sb.AppendLine("")
 [void]$sb.AppendLine("## 逐张（按字号增益降序）")
 [void]$sb.AppendLine("")
-[void]$sb.AppendLine("| 图 | v2 | 回退码 | v1 行高 | 混合行高 | 增益 | 行数 v1→混合 | 模式 |")
+[void]$sb.AppendLine("| 图 | v2 成功 | 失败码 | v1 行高 | v2 行高 | 增益 | 行数 v1→v2 | 模式 |")
 [void]$sb.AppendLine("|---|---|---|---|---|---|---|---|")
 foreach ($r in ($rows | Sort-Object gain -Descending)) {
     $mode = if ($r.v1Mode -ne $r.hybMode) { "$($r.v1Mode)→$($r.hybMode)" } else { "$($r.hybMode)" }
@@ -180,7 +180,7 @@ $sb.ToString() | Set-Content -Path $Out -Encoding UTF8
 
 Write-Host ""
 Write-Host ("report: {0}" -f $Out)
-Write-Host ("接管 {0}/{1}；字号中位 {2}x；变大 {3} / 持平 {4} / 变小 {5}；行数净增 {6}；耗时 {7}ms -> {8}ms" -f `
+Write-Host ("v2 成功 {0}/{1}；字号中位 {2}x；变大 {3} / 持平 {4} / 变小 {5}；行数净增 {6}；耗时 {7}ms -> {8}ms" -f `
         $v2Rows.Count, $rows.Count, $medianGain, $better, $same, $worse, $lineDelta, $meanMsV1, $meanMsV2)
 
 

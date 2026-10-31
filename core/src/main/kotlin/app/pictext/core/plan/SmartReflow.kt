@@ -35,17 +35,19 @@ data class SmartReflowResult(
 )
 
 /**
- * v2 → v1 → 原图的三级回退编排（docs/07 §4.9）。
+ * 两档**手动**选择：用户不开「强化重排」→ 只跑 v1；开了 → 只跑 v2（失败显示原图）。
  *
  * ```text
- * 模型可用 → LayoutPipeline（区域/顺序/细化/覆盖审计）
- *          → ReflowPlanner v2 → LayoutAuditor
- *          → 任一失败：重跑 v1（LayoutAnalyzer + ReflowPlanner v1）
- * 竖排 → ORIGINAL（v1 也救不了，整块看原图）
+ * 强化重排关 → LayoutAnalyzer + ReflowPlanner v1
+ * 强化重排开 → LayoutPipeline（区域/顺序/细化/覆盖审计）→ ReflowPlanner v2 → LayoutAuditor
+ *             任一失败 → ORIGINAL（不回退 v1，避免“我明明开着强化重排，结果拿到 v1”）
  * ```
  *
+ * **不再做 v2→v1 的自动回退**，也不再根据页面内容自动判断用哪一版（V2-51）：
+ * 版本由用户显式选择；v2 失败时给原图 + 诊断码，比静默换成另一套排版可预期。
+ *
  * 这个类是**纯 Kotlin**：检测器/采样器都是接口，所以 core 的单测可以用假检测器跑完整链路，
- * 不需要 native 库（docs/07 §2.9g）。回退是正常路径，不是错误。
+ * 不需要 native 库（docs/07 §2.9g）。
  */
 class SmartReflow(
     private val analysisOptions: AnalysisOptions = AnalysisOptions(),
@@ -55,8 +57,8 @@ class SmartReflow(
     private val pipeline = LayoutPipeline(layoutOptions, analysisOptions, contract)
 
     /**
-     * @param analysis v1 用的全页灰度分析图（长边 ≤1600）。v2 不用它，但回退需要。
-     * @param detector v2 检测器；`null` 表示这次只用 v1（模型缺失/设置关闭）。
+     * @param analysis v1 用的全页灰度分析图（长边 ≤1600）；v2 不用它。
+     * @param detector v2 检测器；`null` 表示用户没开强化重排，这次只跑 v1。
      */
     fun run(
         analysis: GrayImage,
@@ -67,106 +69,80 @@ class SmartReflow(
         detector: LayoutDetector? = null,
         onTile: ((Int, Int) -> Unit)? = null,
     ): SmartReflowResult {
-        val outcome = if (detector != null && sampler != null && regionSampler != null) {
+        // 用户没选强化重排：这是一条正常路径，不是回退，plan 里也不该出现 fallback 诊断。
+        if (detector == null) return projectionPath(analysis, page, planOptions)
+
+        val outcome = if (sampler != null && regionSampler != null) {
             pipeline.analyze(sampler, detector, regionSampler, page, onTile)
         } else {
             LayoutOutcome.Fallback("layout_unavailable")
         }
 
         return when (outcome) {
-            is LayoutOutcome.Fallback -> {
-                if (outcome.useOriginal) {
-                    originalResult(page, outcome.code).copy(v2Outcome = outcome)
-                } else {
-                    projectionPath(analysis, page, planOptions, outcome.code, v2Outcome = outcome)
-                }
-            }
+            is LayoutOutcome.Fallback ->
+                originalResult(page, outcome.code).copy(v2Outcome = outcome)
 
             is LayoutOutcome.Success -> {
                 val plan = ReflowPlanner().plan(outcome.layout, planOptions, outcome.summary)
                 if (plan.fallback == FallbackReason.LAYOUT_FALLBACK) {
                     val code = plan.notes.lastOrNull { it.startsWith("layout_") } ?: "layout_plan_failed"
-                    projectionPath(analysis, page, planOptions, code, plan.notes, outcome)
+                    originalResult(page, code, plan.notes).copy(v2Outcome = outcome)
                 } else {
                     val audit = LayoutAuditor.audit(outcome.layout, plan, planOptions)
-                    when {
-                        !audit.ok ->
-                            projectionPath(analysis, page, planOptions, "layout_audit_failed", audit.issues, outcome)
-
-                        // V2-43：可信度闸门。面积信号分不开好坏页，只有“v2 找到的
-                        // 文字行明显少于 v1”才说明文字被框成了图片。复核要跑一次 v1 分析，
-                        // 所以只在文字面积本来就很小的页面上做，正常文章页零成本。
-                        else -> {
-                            val v1 = if (TrustGate.needsCheck(outcome.summary, layoutOptions)) {
-                                LayoutAnalyzer(analysisOptions).analyze(analysis, page.srcWidth, page.srcHeight)
-                            } else {
-                                null
-                            }
-                            if (v1 != null && TrustGate.looksLikePicture(outcome.layout, v1, layoutOptions)) {
-                                projectionPath(
-                                    analysis = analysis,
-                                    page = page,
-                                    planOptions = planOptions,
-                                    code = TrustGate.CODE,
-                                    v2Outcome = outcome,
-                                    v1Layout = v1,
-                                )
-                            } else {
-                                SmartReflowResult(
-                                    layout = outcome.layout,
-                                    plan = plan,
-                                    projectionAudit = PlanAuditor.audit(outcome.layout, plan),
-                                    layoutAudit = audit,
-                                    layoutStats = outcome,
-                                    fallbackCode = null,
-                                    v2Outcome = outcome,
-                                )
-                            }
-                        }
+                    if (!audit.ok) {
+                        originalResult(page, "layout_audit_failed", audit.issues).copy(v2Outcome = outcome)
+                    } else {
+                        SmartReflowResult(
+                            layout = outcome.layout,
+                            plan = plan,
+                            projectionAudit = PlanAuditor.audit(outcome.layout, plan),
+                            layoutAudit = audit,
+                            layoutStats = outcome,
+                            fallbackCode = null,
+                            v2Outcome = outcome,
+                        )
                     }
                 }
             }
         }
     }
 
-    /** 可信度闸门的第二段：v2 的文字行数相对 v1 塌了，就认为这一页被框成了图片。 */
-    private fun textLooksLikePicture(outcome: LayoutOutcome.Success, v1: PageLayout): Boolean {
-        val v1Lines = v1.textLines().size
-        if (v1Lines < layoutOptions.trustMinV1Lines) return false
-        val v2Lines = outcome.layout.textLines().size
-        return v2Lines < layoutOptions.trustLineRatio * v1Lines
-    }
-
-    /** 只用 v1 的入口（模型不可用 / 用户关掉 v2 / 单测）。 */
+    /** 只用 v1 的入口（用户没开强化重排 / 单测）。 */
     fun runProjectionOnly(
         analysis: GrayImage,
         page: PageContext,
         planOptions: ReflowOptions,
-    ): SmartReflowResult = projectionPath(analysis, page, planOptions, "layout_unavailable")
+    ): SmartReflowResult = projectionPath(analysis, page, planOptions)
 
     private fun projectionPath(
         analysis: GrayImage,
         page: PageContext,
         planOptions: ReflowOptions,
-        code: String,
-        extra: List<String> = emptyList(),
-        v2Outcome: LayoutOutcome? = null,
-        v1Layout: PageLayout? = null,
     ): SmartReflowResult {
-        val layout = v1Layout ?: LayoutAnalyzer(analysisOptions).analyze(analysis, page.srcWidth, page.srcHeight)
+        val layout = LayoutAnalyzer(analysisOptions).analyze(analysis, page.srcWidth, page.srcHeight)
         val plan = ReflowPlanner().plan(layout, planOptions)
         return SmartReflowResult(
             layout = layout,
-            plan = plan.copy(notes = plan.notes + "layout_fallback=$code" + extra),
+            plan = plan,
             projectionAudit = PlanAuditor.audit(layout, plan),
             layoutAudit = null,
             layoutStats = null,
-            fallbackCode = code,
-            v2Outcome = v2Outcome,
+            fallbackCode = null,
+            v2Outcome = null,
         )
     }
 
-    private fun originalResult(page: PageContext, code: String): SmartReflowResult {
+    /**
+     * 强化重排失败：整页显示原图。
+     *
+     * @param code 诊断码，写进 plan.notes 与 [SmartReflowResult.fallbackCode]。
+     * @param extra v2 规划/审计给出的具体原因，原样带进 notes 方便 CLI 排查。
+     */
+    private fun originalResult(
+        page: PageContext,
+        code: String,
+        extra: List<String> = emptyList(),
+    ): SmartReflowResult {
         val layout = PageLayout(
             srcWidth = page.srcWidth,
             srcHeight = page.srcHeight,
@@ -194,7 +170,7 @@ class SmartReflow(
             items = emptyList(),
             backgroundColor = page.backgroundColor,
             isDark = page.isDark,
-            notes = listOf("fallback_layout_fallback", code),
+            notes = listOf("fallback_layout_fallback", code) + extra,
             bodyScale = 1f,
             strategy = LayoutStrategy.DOC_LAYOUT,
         )

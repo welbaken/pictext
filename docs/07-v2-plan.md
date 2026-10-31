@@ -1628,6 +1628,7 @@ testdata/report-v2.md                  # 批量对比
 | V2-48 | `core/.../layout/RegionDeduper.kt`、`LayoutPipeline` 在补区后调用 | 690×1533 深色页的重复 src **17 组 → 0**；42 张批量 `dupSrc=0`、`itemsDropped=0`；`:core:test` 新增 7 个去重用例 |
 | V2-49 | RegionRefiner 的“行带贴边 → ROI 再外扩” | 同一张图标题第二行右缘 533 → 538（实际墨迹 537），仍是 DOC_LAYOUT、auditV2=ok |
 | V2-50 | 审计降采样 240²、FIGURE 半分辨率细化、区域并行、Android 整页灰度缓存、CLI/Android 内存采样、`scripts/bench-v2.ps1` | 1080×2400 CLI 977→751ms、1080×20000 2335→2057ms；MuMu 1080×2400 3065→1901ms；**目标仍未达标**（详见 §13.6.5） |
+| V2-51 | `SmartReflow` 取消 v2→v1 回退；App 默认 v1 + 顶栏「强化重排」；设置键改 `enhanced_reflow` | 默认只跑 v1；v2 成功 33/37、失败 4 张显示原图；`SmartReflowTest` 4 例；CLI 报告增加 `v2ok/mode` 列 |
 | V2-33 | `--compare` 的 `compare.png`、`testdata/notes-v2.csv` | 42 张评分表已建；compare.png 已验证（1128×1371） |
 | V2-41（部分） | 「关于」文案、`keystore.properties.example`、release/安装体积记录、37 张盲评 | release 24.59MB 可构建；安装 23,996KB APK + 7,660KB 数据；盲评 v2 可用 19 vs v1 17，但真实样例 4:8、丢内容 2:0 → **暂不发布**（§13.6.8）；真机待用户 |
 
@@ -1691,6 +1692,10 @@ testdata/report-v2.md                  # 批量对比
     阈值，而是在“模型区域 + 残差区域都细化完”之后做**行带级/块级去重**（`RegionDeduper`）。
     另外 `plan.json` 原来的 `"seg":0/1` 不是合法 JSON，顺手改成 `"seg":"0/1"`，`score-v2.ps1`
     才能用机器可读的方式统计 `dupSrc` / `itemsDropped`。
+17. **取消 v2→v1 自动回退（V2-51）**：本文 §4.9 写的是“v2 → v1 → 原图”三级回退，盲评后
+    用户决定改成“默认 v1；打开「强化重排」才走 v2；v2 失败显示原图”。所以 §4.9、§4.10 里
+    “v2 失败回退 v1”“TrustGate 自动回退”等描述**已作废**，以 §13.6.9 为准。
+    `SmartReflow` 只是在 detector=null 时走 v1，不再做“v2 失败后重跑 v1”。
 
 ### 13.4 Android 实测（MuMu 模拟器，Android 15 / 1440×2560 / x86_64）
 
@@ -2029,9 +2034,53 @@ A/B 字号中位 1.008×，变大 13 / 持平 15 / 变小 3；3 张“变小”�
   P24（缩略图样张）两边都不可用，属无效样本。
 
 **结论**：v2 在合成夹具上明显更好（7:1），但在真实样例上仍然输给 v1（4:8），
-且内容丢失 2:0、顺序 33:35 都没过硬门槛。**按 V2-41 的“v2 可用数 ≥ v1 + 0 内容丢失”标准，
-当前不能把 v2 设为默认**；建议保持 β 开关，先修 P25/P31 的内容丢失与 P13 的标题强切，
-再重跑盲评。
+且内容丢失 2:0、顺序 33:35 都没过硬门槛。按这个结果，v2 不能设为默认——见 §13.6.9
+的处置：默认全部走 v1，v2 变成用户显式选择的「强化重排」。
+（注：这次盲评是在 V2-51 之前做的，当时 v2 失败会静默回退 v1，所以“不可用/内容丢失”的
+页面现在打开强化重排会直接显示原图而不是 v1；要评估新交互下的 v2 观感需要重跑盲评。）
+
+### 13.6.9 V2-51：取消自动选版，默认 v1 +「强化重排」才走 v2（2026-10-31）
+
+**决策**（用户拍板）：不再让程序根据页面内容自动判断用 v1 还是 v2，也不再做 v2→v1 的
+自动回退。版本只由用户显式选择：
+
+| 用户操作 | 实际链路 | 失败时 |
+|---|---|---|
+| 不打开「强化重排」（默认） | 只跑 v1（`LayoutAnalyzer` + `ReflowPlanner`） | 按 v1 原有逻辑处理 |
+| 打开「强化重排」 | 只跑 v2（`LayoutPipeline` → `ReflowPlannerV2` → `LayoutAuditor`） | **显示原图**（`LAYOUT_FALLBACK`），不换回 v1 |
+
+**改了什么**
+
+- `SmartReflow`：detector 为 null 时只走 v1（不再记为 fallback）；v2 的
+  `LayoutOutcome.Fallback`、规划 `LAYOUT_FALLBACK`、`LayoutAuditor` 失败全部返回
+  “空版面 + 原图”，不再调用 `LayoutAnalyzer`。**V2-43 的 TrustGate 产品链路已停用**
+  （类与单测保留作诊断参考，不再参与判定）。
+- App：`AppSettings.smartLayout` → `enhancedReflow`，DataStore 键改成 `enhanced_reflow`
+  （老 β 键不再读取，升级后统一回到 v1）；顶栏按钮是两行「强化重排 / 开|关」，
+  v2 失败时用 `fallback_enhanced_failed` 提示“强化重排没有成功，已显示原图”。
+- CLI/报告：`--layout` 的失败现在是 `mode=ORIGINAL` + `fallback=LAYOUT_FALLBACK`；
+  `score-v2.ps1` 增加 `v2ok`/`mode` 列，`ab-v1-v2.ps1` 的“混合”口径改成“v2 失败=原图”，
+  `score-detection.ps1` 只统计 v2 成功的页。
+- `:core:test` 新增 `SmartReflowTest`：默认 v1 不算 fallback、v2 成功走 DOC_LAYOUT、
+  v2 两种失败都返回空版面+原图（不再出现 v1 的块/行）。
+
+**影响**：盲评里 P13/P31/P25 这些问题只会影响打开了「强化重排」的用户；默认路径完全走
+v1，行为与 v1 旧版本一致。v2 仍可继续迭代，不再需要为了“别把 v1 弄坏”而束手束脚。
+
+**实测（2026-10-31 改造后）**：
+
+- 42 张批量：v2 成功 **33/37**（37 = 可解码），失败显示原图 **4** 张：
+  `006v119zgy1iiavd4iffpj30z025sak4`（audit）、`device-1440x2560` 与 `07-dashboard@1920`
+  （too few regions）、`12-tight-sensitive@1080`（audit）；解码失败 5 张不变。
+  这 4 张在旧逻辑里会静默变成 v1，现在会明确显示原图 + 提示条。
+- 检测评分（只统计 v2 成功页）：召回 60.1% / 准确 87.2% / 行覆盖 87.7%
+  （旧口径 64.0/90.6/91.9 是“回退 v1 的页不计入”，现在 05-chat 这类页真正进了 v2 统计，
+  分数下降是**诚实口径**，不是模型变差）。
+- A/B：v2 成功 33/37；字号中位 1.008×，变大 15 / 持平 15 / 变小 3；行数净增 209；
+  耗时 955ms → 2753ms（v2 比 v1 慢约 2.9×，这是用户显式选择才付的成本）。
+- Android（MuMu）：默认 v1 冷启动 866ms（`strategy=PROJECTION`）；点「强化重排」后
+  重跑 1459ms（`DOC_LAYOUT`）；v2 失败页（12-tight）`mode=ORIGINAL`，界面显示提示条，
+  UI dump 确认没有 v1 的块/行。
 
 ### 13.7 V2-13 闸门结论（2026-10-30）
 
