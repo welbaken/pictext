@@ -1628,6 +1628,7 @@ testdata/report-v2.md                  # 批量对比
 | V2-48 | `core/.../layout/RegionDeduper.kt`、`LayoutPipeline` 在补区后调用 | 690×1533 深色页的重复 src **17 组 → 0**；42 张批量 `dupSrc=0`、`itemsDropped=0`；`:core:test` 新增 7 个去重用例 |
 | V2-49 | RegionRefiner 的“行带贴边 → ROI 再外扩” | 同一张图标题第二行右缘 533 → 538（实际墨迹 537），仍是 DOC_LAYOUT、auditV2=ok |
 | V2-50 | 审计降采样 240²、FIGURE 半分辨率细化、区域并行、Android 整页灰度缓存、CLI/Android 内存采样、`scripts/bench-v2.ps1` | 1080×2400 CLI 977→751ms、1080×20000 2335→2057ms；MuMu 1080×2400 3065→1901ms；**目标仍未达标**（详见 §13.6.5） |
+| V2-33 | `--compare` 的 `compare.png`、`testdata/notes-v2.csv` | 42 张评分表已建；compare.png 已验证（1128×1371） |
 
 ### 13.1.1 检测基线摘要（详见 `testdata/layout/detection-baseline.md`）
 
@@ -1958,6 +1959,13 @@ v2 的文字行从 7 降到 2，于是 V2-43 可信度闸门按设计回退 v1�
   先把 TEXT ROI 也按 0.75× 降采样或把 `RowSegmenter/ColumnInk` 的多次全 ROI 遍历合并；
   ② 真机 release 用 3 台设备复测 PSS；③ 长图 ROI 解码在 Android 上仍是按需 `decodeRegion`，
   1080×20000 需要专门的“分块灰度缓存”。
+
+### 13.6.6 V2-33：`--compare` 并排图 + 人工评分表（2026-10-31）
+
+- `--compare` 现在除了 `after-v1.png` / `after-v2.png` / `after.png` / `debug.png` / `stats.json`，
+  还会写 **`compare.png`**（左 v1、右 v2，各缩到 540 宽并排；复用 `summary` 的拼图逻辑）。
+- 新增 **`testdata/notes-v2.csv`**：42 张样例一行一张，列为
+  `图片, 分组, v2链路, 人工评分v1, 人工评分v2, 主要问题, 备注`，评分留空等 V2-41 人工填。
 
 ### 13.7 V2-13 闸门结论（2026-10-30）
 

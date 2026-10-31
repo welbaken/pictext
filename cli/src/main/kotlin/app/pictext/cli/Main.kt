@@ -236,8 +236,13 @@ fun main(args: Array<String>) {
     if (compare) {
         val v1Layout = LayoutAnalyzer(analysisOptions).analyze(gray, w, h)
         val v1Plan = ReflowPlanner().plan(v1Layout, planOptions)
-        writeAfter(File(outDir, "after-v1.png"), rgb, v1Layout, v1Plan)
-        writeAfter(File(outDir, "after-v2.png"), rgb, layout, plan)
+        val v1File = File(outDir, "after-v1.png")
+        val v2File = File(outDir, "after-v2.png")
+        writeAfter(v1File, rgb, v1Layout, v1Plan)
+        writeAfter(v2File, rgb, layout, plan)
+        // V2-33：并排对比图（左 v1 / 右 v2），比来回切两张图快得多。
+        val compareFile = File(outDir, "compare.png")
+        summary(listOf(compareFile.path, v1File.path, v2File.path))
         File(outDir, "stats.json").writeText(
             "{\n" +
                 "  \"v1\": {\"mode\":\"${v1Plan.mode}\",\"lines\":${v1Layout.textLines().size}," +
