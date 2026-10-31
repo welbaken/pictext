@@ -24,7 +24,11 @@ data class AnalysisOptions(
 
     /**
      * 单张分析图（或单条带）的像素预算（P2）。超过就切条带分析，宽度保持不变。
-     * 8MP ≈ 灰度 8MB + 二值 mask 8MB + contentMask 8MB，峰值约 25MB。
+     *
+     * **实测口径不是 3 字节/像素**：灰度 1B + 墨迹 1B + 候选 1B + 二值 mask 1B +
+     * 竖直游程 **2B**（`BlockClassifier.verticalRuns` 用 `ShortArray`）≈ **7B/像素**；再加上解码期那张
+     * ARGB（4B/像素，随后可回收）。8MP 单次分析峰值约 60–70MB——低端机 128MB 堆要留余量，
+     * 所以这个阈值不要再往上调。（背景曲面曾经是另一个 4B/像素常驻，现已不返回。）
      */
     val analysisMaxPixels: Int = 8_000_000,
 
@@ -32,7 +36,13 @@ data class AnalysisOptions(
     val stripHeight: Int = 3000,
     val stripOverlap: Int = 48,
 
-    /** 条带并行分析的线程数；0 = 按 CPU 核数自动（上限 4）。 */
+    /**
+     * 条带并行分析的线程数；0 = 自动，**上限 2**（内存优先，不是 CPU 优先）。
+     *
+     * 每条并发条带常驻 ≈ 6 字节/像素（ink + 两种 mask + `ShortArray` 游程），
+     * 1080×3000 约 16MB；4 并发会把 1080×20000 长图的峰值顶到 ~124MB。要更快可以显式调大，
+     * 但要先确认 `:core:longPageMemoryTest`（96MB 堆）仍然通过。
+     */
     val stripParallelism: Int = 0,
     val bgCell: Int = 32,
     val bgPercentileLight: Int = 92,
@@ -61,8 +71,7 @@ data class AnalysisOptions(
     /** 子行间距的变异系数上限；超过则认为不是稳定正文，保持图块/UI。 */
     val rowSubMaxCv: Float = 0.25f,
 
-    /** 细竖直装饰列：最小连续长度（× 页高）与最小两侧留白（× 行高）。 */
-    val decorMinRunRatio: Float = 0.05f,
+    /** 细竖直装饰列：最小两侧留白（× 行高）。 */
     val decorMaxWidthRatio: Float = 0.005f,
     val decorMinBlankRatio: Float = 0.5f,
 
@@ -110,12 +119,34 @@ data class AnalysisOptions(
     val cutCleanRatio: Float = 0.70f,
 
     /**
+     * 切点候选的**加权评分**权重（v1.4）。四个权重取相对大小即可，不必和为 1。
+     *
+     * 旧实现是字典序：先“离目标列最近”，再“缝更宽”。字典序的毛病是 1px 的噪点缝
+     * 只要离得近就永远赢过 12px 的真字缝。改成加权后，宽缝可以用“宽度分”补回距离差，
+     * 但权重设计成距离仍然占主导，避免全局切分列随参差的右边缘漂移。
+     *
+     * - [cutWeightCenter]：离目标列（组列/页面列）的远近；
+     * - [cutWeightGap]：缝宽（以 `0.35 × 行高` 为满分基准，字距 2–4px 只有一半分）；
+     * - [cutWeightBalance]：两半均衡度（逐行切分时它才是主角）；
+     * - [cutWeightInk]：缝内最干净那一列的墨量（零墨满分）。
+     *
+     * `balanceFirst = true`（逐行贴回切点）时 center 与 balance 的权重**互换**：
+     * 估算全局列要稳（靠 center），逐行下刀要均衡（靠 balance）。
+     */
+    val cutWeightCenter: Float = 0.45f,
+    val cutWeightGap: Float = 0.30f,
+    val cutWeightBalance: Float = 0.15f,
+    val cutWeightInk: Float = 0.10f,
+
+    /** 缝宽的满分基准（× 行高）：22px 正文的 `0.35 × 22 ≈ 8px`，字距 2–4px 只有一半分。 */
+    val cutGapFullRatio: Float = 0.35f,
+
+    /**
      * 按段落左边距分组的容差（× 版心宽）。同缩进的段落共用一根切分列，
      * 缩进引用/列表项因此也能切；只有 1 行的“孤立缩进行”仍走页面列，不会被单独劈开。
      */
     val splitGroupTolerance: Float = 0.02f,
     val longLineRatio: Float = 0.70f,
-    val splitLineRatio: Float = 0.62f,
 
     /** P1-1：拉丁/URL 安全切分（零墨空白 + 最小缝宽）。默认关。 */
     val latinSplitEnabled: Boolean = false,
@@ -126,6 +157,34 @@ data class AnalysisOptions(
 
     /** 且每“字宽”的墨簇数 > 该值（中文约 1，拉丁/代码 2–4），避免粗体中文被误判。 */
     val latinLikeClusterDensity: Float = 1.8f,
+
+    /**
+     * v1.3：超高行带的**带内竖切**（图文混排）。
+     *
+     * 图的纵向范围会让水平投影出一条超高的行带，右侧的几行字被并进同一条带，
+     * 之后整条带被判成图块、文字跟着图一起缩放。[BandRegionSplitter] 在带内找一条
+     * **贯通整带高度**的空白竖缝，把带拆成左右两个子区，再各自重做行投影与角色判定。
+     *
+     * 与 `split*` / `cutWin*` 不是同一层：这里切的是**区域**（图 vs 文），
+     * 不是行内字缝；两者混用会把照片劈成两半。
+     */
+    val bandSplitMinHeight: Int = 40,
+
+    /** 竖缝最小宽度（× 分析图宽）：字缝只有 1–4px，图文通道通常 ≥ 1%。 */
+    val bandSplitMinGapRatio: Float = 0.008f,
+
+    /** 竖切位置到左右边界的最小距离（× 带宽）：过于靠边就不切，避免切出细条。 */
+    val bandSplitMinSideRatio: Float = 0.15f,
+
+    /** 竖缝内每列的墨量上限（× 带高）：允许抗锯齿噪点，但必须基本贯通。 */
+    val bandSplitMaxGapInkRatio: Float = 0.02f,
+
+    /**
+     * 竖切验收：带高必须 ≥ 该倍数 × 子区文字行高中位数。
+     *
+     * 没有这条，一条普通文字行里的宽字距也会被当成竖缝，把一句话拆成两行。
+     */
+    val bandSplitMinHeightToLineRatio: Float = 2.5f,
 
     /** P1-4：多栏安全网。 */
     val multiColumnMinWidthRatio: Float = 0.05f,

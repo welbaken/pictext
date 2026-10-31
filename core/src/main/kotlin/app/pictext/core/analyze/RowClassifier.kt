@@ -7,26 +7,21 @@ import kotlin.math.max
  * 一条行带的几何特征。全部来自 `mask` / `vrun` 的一次扫描，不引入连通域。
  *
  * @param density 全页相对墨密度 `ink / (height × pageWidth)`，与图块判据同口径。
- * @param boxDensity 行带内部墨密度 `ink / (height × width)`，用于判断“实心块”。
  * @param maxRun 带内最长竖直墨迹。
  * @param longFrac 超过 `figRunRatio × 行高` 的像素占比。
  * @param solidRun 最宽的“实心列组”宽度：连续列且每列墨占比 ≥ 0.6（头像、图标、色块）。
  * @param maxGap 带内最大横向空白宽度（列）。
- * @param denseIsland 窗口（约 1×行高见方）内的最大墨密度。
  */
 data class RowFeatures(
     val height: Int,
     val width: Int,
-    val ink: Int,
     val heightRatio: Float,
     val widthRatio: Float,
     val density: Float,
-    val boxDensity: Float,
     val maxRun: Int,
     val longFrac: Float,
     val solidRun: Int,
     val maxGap: Int,
-    val denseIsland: Float,
 )
 
 /**
@@ -42,14 +37,13 @@ class RowClassifier(private val options: AnalysisOptions = AnalysisOptions()) {
         width: Int,
         band: RowBand,
         medianHeight: Float,
-        vrun: IntArray,
+        vrun: ShortArray,
         pageWidth: Int,
     ): RowFeatures {
         val h = max(1, band.height)
         val bw = max(1, band.width)
         val area = h * width
         val density = if (area == 0) 0f else band.inkCount.toFloat() / area
-        val boxDensity = if (h * bw == 0) 0f else band.inkCount.toFloat() / (h * bw)
 
         var maxRun = 0
         var longPixels = 0
@@ -57,7 +51,7 @@ class RowClassifier(private val options: AnalysisOptions = AnalysisOptions()) {
         for (y in band.y0 until band.y1) {
             val base = y * width
             for (x in band.x0 until band.x1) {
-                val r = vrun[base + x]
+                val r = vrun[base + x].toInt()
                 if (r > maxRun) maxRun = r
                 if (r > longLimit) longPixels++
             }
@@ -98,21 +92,16 @@ class RowClassifier(private val options: AnalysisOptions = AnalysisOptions()) {
             }
         }
 
-        val denseIsland = maxLocalDensity(mask, width, band, medianHeight)
-
         return RowFeatures(
             height = h,
             width = bw,
-            ink = band.inkCount,
             heightRatio = h / medianHeight,
             widthRatio = bw.toFloat() / max(1, pageWidth),
             density = density,
-            boxDensity = boxDensity,
             maxRun = maxRun,
             longFrac = longFrac,
             solidRun = solidRun,
             maxGap = maxGap,
-            denseIsland = denseIsland,
         )
     }
 
@@ -133,44 +122,4 @@ class RowClassifier(private val options: AnalysisOptions = AnalysisOptions()) {
         return LineRole.BODY
     }
 
-    /** 积分图实现的最大局部墨密度；窗口约 1×行高见方。 */
-    private fun maxLocalDensity(
-        mask: BooleanArray,
-        width: Int,
-        band: RowBand,
-        medianHeight: Float,
-    ): Float {
-        val h = band.height
-        val bw = band.width
-        if (h <= 0 || bw <= 0) return 0f
-        val win = max(6, medianHeight.toInt()).coerceAtMost(minOf(h, bw))
-        if (win <= 1) return 0f
-        val integral = IntArray((h + 1) * (bw + 1))
-        val stride = bw + 1
-        for (y in 0 until h) {
-            val base = (band.y0 + y) * width + band.x0
-            var rowSum = 0
-            for (x in 0 until bw) {
-                if (mask[base + x]) rowSum++
-                integral[(y + 1) * stride + (x + 1)] = integral[y * stride + (x + 1)] + rowSum
-            }
-        }
-        val step = max(1, win / 2)
-        var best = 0f
-        var top = 0
-        while (top + win <= h) {
-            var left = 0
-            while (left + win <= bw) {
-                val sum = integral[(top + win) * stride + (left + win)] -
-                    integral[top * stride + (left + win)] -
-                    integral[(top + win) * stride + left] +
-                    integral[top * stride + left]
-                val d = sum.toFloat() / (win * win)
-                if (d > best) best = d
-                left += step
-            }
-            top += step
-        }
-        return best
-    }
 }

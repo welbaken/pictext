@@ -25,6 +25,7 @@
 ```kotlin
 data class GrayImage(val width: Int, val height: Int, val data: ByteArray) // 0..255
 
+// 以下是常用参数节选，完整字段见 core/.../analyze/AnalysisOptions.kt，两边默认值必须一致。
 data class AnalysisOptions(
     // [P1] 宽度优先：长图的长边是高度，按长边定标会把宽度压成一条（690×10305 → 107×1598）。
     val analysisMaxWidth: Int = 1600,
@@ -32,7 +33,7 @@ data class AnalysisOptions(
     val analysisMaxPixels: Int = 8_000_000,
     val stripHeight: Int = 3000,
     val stripOverlap: Int = 48,
-    val stripParallelism: Int = 0,       // 0 = 按 CPU 核数自动（上限 4）
+    val stripParallelism: Int = 0,       // 0 = 自动，上限 2（内存优先，见 §15）
     val bgCell: Int = 32,
     val bgPercentileLight: Int = 92,
     val bgPercentileDark: Int = 8,
@@ -49,7 +50,6 @@ data class AnalysisOptions(
     val rowSubMinHeightRatio: Float = 0.5f,   // [v1.1] 子行高度下限
     val rowSubMaxHeightRatio: Float = 1.8f,   // [v1.1] 子行高度上限
     val rowSubMaxCv: Float = 0.25f,           // [v1.1] 子行行距变异系数上限
-    val decorMinRunRatio: Float = 0.05f,      // [v1.1] 装饰线最短游程（× 页高）
     val decorMaxWidthRatio: Float = 0.005f,   // [v1.1] 装饰线最大宽度（× 页宽）
     val decorMinBlankRatio: Float = 0.5f,     // [v1.1] 装饰线一侧最小留白（× 字高）
     val figHeightRatio: Float = 2.8f,
@@ -66,10 +66,10 @@ data class AnalysisOptions(
     val splitFullWidthRatio: Float = 0.72f,   // [v1.1] 切分安全门：行宽下限（⊗ 页宽）
     val splitLeftAlignedRatio: Float = 0.50f, // [v1.1] 左对齐正文行的放行宽度
     val cutWin0: Float = 0.06f,          // 首次找缝，× 图宽
-    val cutWin1: Float = 0.025f,         // 围绕中位切点精修
+    val cutWin1: Float = 0.05f,          // 围绕中位切点精修（v1.2 从 0.025 放宽）
+
     val cutCleanRatio: Float = 0.70f,
-    val longLineRatio: Float = 0.70f,    // 参与估计切点的行
-    val splitLineRatio: Float = 0.62f,   // 可切分的行
+    val longLineRatio: Float = 0.70f,    // 长行门槛 = 该系数 × 文字行宽 90 分位
     val latinSplitEnabled: Boolean = false, // [v1.1] P1-1 实验开关，默认关
     val latinMinGapRatio: Float = 0.12f,    // [v1.1] 拉丁缝最小宽度（× 行高）
     val latinLikeClusterRatio: Float = 0.62f,  // [v1.1] 窄墨簇 → 拉丁/代码行
@@ -87,10 +87,9 @@ data class ReflowOptions(
     val maxScale: Float = 3.0f,
     val minGain: Float = 1.25f,
     val figMaxScale: Float = 2.2f,
-    val gapClamp: IntRange = 6..40,
     val paragraphGapRatio: Float = 1.35f,
     val uiMaxScale: Float = 1.5f,        // [v1.1] UI 行/图的最大放大（D-C）
-)
+
 ```
 
 ```kotlin
@@ -153,8 +152,9 @@ for (band in runs) {
     role = classifyRole(band)               // UI 优先，其次 HEADING / CAPTION / BODY
 }
 
-// 4) 版心（v1.1：只用 BODY/HEADING 的长行）
-val long = lines.filter { role in {BODY, HEADING} && width >= 0.70 * roughPageWidth }
+// 4) 版心（v1.1：只用 BODY/HEADING 的长行；v1.3：门槛 = 0.70 × 文字行宽 90 分位）
+val refW = p90(bodyLines.map { it.width })      // 不看图块，避免图文混排把门槛顶高
+val long = lines.filter { role in {BODY, HEADING} && width >= 0.70 * refW }
 val left = long.minOf { it.x0 }; val right = long.maxOf { it.x1 }
 
 // 4b) 多栏安全网：中线附近有贯通竖带 + 两侧都有长行 → 直接回退原图
@@ -313,10 +313,37 @@ if (band.height > 1.8 × medH) {
 
 | 顺序 | 判据 | 结果 |
 |---|---|---|
+| ⓪ | `height ≥ 40px` 且带内存在一条贯通整带高度的空白竖缝 | 竖切成左右两区，各自重做行投影后回到 ①（**先左后右**） |
 | ① | `density > 0.62` 或 `maxRun > 2.6×medH && frac > 0.008` | `FIGURE(PHOTO)` |
 | ② | `height > 1.8×medH` 且 `RowDecomposer` 成功 | 拆成多行，逐行回到 ① |
 | ③ | `height > 2.8×medH` 且拆不开 | `FIGURE(UI)`（头像带、按钮条、海报） |
 | ④ | 其余 | `TextLine.role = BODY / HEADING / CAPTION / UI` |
+
+### 8.1 [v1.3] 带内竖切：图文混排
+
+一张图右侧有几行字时，图的纵向范围让水平投影出一条**超高行带**，右侧文字被并进同一条带；
+之后整条带按高度判成图块，那几行字只能跟着图一起缩放（≈1.0×），既没重排也没放大。
+
+`BandRegionSplitter` 在带内找一条**贯通整带高度**的空白竖缝，把带拆成左右两个子区：
+
+```
+每列墨量 ≤ max(1, 2% × 带高)          // 允许抗锯齿噪点
+连续缝宽 ≥ max(4, 0.8% × 分析宽)      // 字距 2–4px 不算
+切点到左右边界 ≥ 15% × 带宽           // 过于靠边就不处理
+两侧都要有墨；多条候选缝取离带心最近的
+```
+
+拆开后左右各自 `RowSegmenter.segmentRegion` 重做行投影，回到 ① 重新判“是图还是字”。
+验收两条都要满足，否则**放弃拆分**、按原来的整块图处理：
+
+1. 子区里必须验出文字行（两侧都是图 → 那条缝只是照片里的一道亮纹）；
+2. `带高 ≥ 2.5 × 子行高中位数`（否则是“一行字里的宽字距”被当成竖缝，拆开会把一句话劈成两行）。
+
+子区判角色时用的行高：默认沿用整页 `medH`；**只有整页中位数被这条带自己带偏**
+（`medH ≥ 0.9 × 带高`，即整页只有这张图）时才改用两侧中位数里更小的那个。
+
+> 这是**区域分割**，与 11 节的**行内字缝切分**是两件事：拿 `ColumnSplitter` 去切图会把照片
+> 劈成两半；拿 `BandRegionSplitter` 去切一行正常文字会把一句话拆成两行（由验收 2 兜住）。
 
 角色判据（`RowClassifier`，全部来自一次 `mask` / `vrun` 扫描）：
 
@@ -377,7 +404,8 @@ FIGURE 块最终得到 S 坐标下的矩形 `bounds`，渲染时整块裁剪、�
 
 | 量 | 定义 |
 |---|---|
-| `textLeft` / `textRight` | **长行**（宽度 ≥ 0.70 × 版面宽）的 `x0` 最小值 / `x1` 最大值 |
+| `textLeft` / `textRight` | **长行**（宽度 ≥ `longLineMinWidth`）的 `x0` 最小值 / `x1` 最大值 |
+| `longLineMinWidth` | `0.70 × 文字行宽的 90 分位`（v1.3：只用文字行，不看图块） |
 | `medH` | 文字行带高度中位数（含抗锯齿，比真实字身大约 8%） |
 | `medGap` | 相邻行带间距中位数 |
 | `pitch` | 相邻行 `y0` 差值中位数（真正的行距） |
@@ -387,6 +415,12 @@ FIGURE 块最终得到 S 坐标下的矩形 `bounds`，渲染时整块裁剪、�
 > **版心为什么用长行而不是全部行**：截图里常有一行页码、一个水印、一个状态栏图标，它们比正文靠边得多。用 min/max 会把版心拉到图片边缘，所有行都多出一截空白，切分列也会偏。用"长行"定义版心，短行仍然照常渲染（它们的裁剪范围可以超出版心，见 12.6），只是不参与版心估计。
 >
 > 原型第一版用的是全部行的 min/max，导致顶部的截图 UI 一出现版心就漂移，改成"长行最值"后稳定。
+>
+> **[v1.3] 版面宽与长行门槛都只用文字行算**：图文混排时图块的包围盒会并进右侧几行字，
+> 用它算出来的版面宽被撑宽，长行门槛跟着抬高，正常的正文也不再算"长行"，
+> 整页被 `too_few_long_lines` 判死（`05-chat` / `09-poster` 两个夹具都是这个原因才回退原图）。
+> 参考宽度取文字行宽的**90 分位**而不是 max：一条通栏插图行不该把全页门槛顶上去。
+
 
 ---
 
@@ -405,14 +439,37 @@ FIGURE 块最终得到 S 坐标下的矩形 `bounds`，渲染时整块裁剪、�
 ### 11.2 逐行找缝，再取中位数
 
 ```
-对每个"长行"（x1-x0 ≥ 0.70 × 版心宽）：
-    seg[x] = mask[y0:y1, x] 的墨点数   （x 在 center ± 0.06W 内）
-    thr    = max(1, 0.10 × median(seg 中 >0 的值))
-    候选   = { x | seg[x] ≤ thr }
-    cut_i  = 候选里离 center 最近的那个；没有候选就取 seg 最小的列
+对每个"长行"（x1-x0 ≥ longLineMinWidth）：
+    counts[x] = mask[y0:y1, x] 的墨点数   （x 在 center ± 0.06W 内）
+    thr    = max(1, 0.10 × median(counts 中 >0 的值))
+    候选   = { 连续列组 | counts[x] ≤ thr }，逐组取组中点
+    对每个候选打分，取最高分：
+        center  = 1 - |x - center| / win            // 离目标列越近越好
+        gap     = min(1, 缝宽 / (0.35 × 行高))       // 字距 2–4px 只有一半分
+        balance = 2 - 2 × max(左半, 右半) / 行宽     // 两半越均衡越好
+        ink     = 1 - 组内最干净列的墨量 / thr        // 零墨满分
+        score   = 0.45·center + 0.30·gap + 0.15·balance + 0.10·ink
 
 cut = median(cut_i)
 ```
+
+**[v1.4] 为什么从字典序改成加权**：旧实现是「离中心最近 → 缝更宽」的字典序，1px 的噪点缝
+只要离得近就永远赢过 12px 的真字缝。加权之后宽缝可以用 `gap` 分补回一点距离差，
+但 `center` 仍是最大权重，切分列不会随参差的右边缘漂移。
+逐行贴回切点时 `center` 与 `balance` 的权重**互换**（全局列要稳、逐行下刀要均衡）。
+
+> **局限（已实测，暂不修）**：这套打分只解决"多条缝里选哪条"，不解决"这条缝本身穿过了字形"。
+> 典型例子是大字海报的「重|排」：`重` 的右缘和 `扌` 粘成一个 47px 的墨簇，`扌` 与 `非` 之间
+> 是一条 3px 的**真零墨缝**，`splitsWord` 判「左侧整簇」直接放行。
+>
+> 两条看起来能修的路都试过，都不成立：
+> 1. **用字宽(pitch)替代行高当窄簇基准**——这条线的 pitch(≈29) 反而小于行高(29–31)，
+>    且左侧墨簇 47px 在 22/29/31/35 任何单位下都算"整簇"，判据不触发；
+> 2. **拒绝"两侧都是满高实心竖笔"的窄缝**——能挡住 `扌|非`，但切点立刻挪到下一个字
+>    `列` 的 `夕|刂`，只是把缺陷换了个字，净收益为零，已撤回。
+>
+> 结论：纯投影在"大字 + 连笔/粘连"的展示型文字上无法可靠定位字缝，
+> 需要字形级信息。v1 的兜底是"宁可整块不切"，海报这类页面本来就允许回退原图。
 
 **为什么逐行而不是一条全局垂直投影**：中文正文按字格对齐，全局投影上几乎不存在连续的空白列（每个 x 都会穿过某些行的笔画），求全局最小值等于在噪声里挑一个。逐行找缝的语义是"这一行的字与字之间"，永远成立。
 
@@ -429,7 +486,7 @@ cut = median(cut_i)
             拉丁行额外允许“空白 ≥ 1.5 × 本行空白中位数”豁免（词间空格）；
             中文行不豁免，否则会把“引”切成“弓 + 丨”
 
-对每个候选行：在 cut ± 0.025W 内找最近的安全缝；找不到再把窗口放宽一倍
+对每个候选行：在 cut ± 0.05W 内找最近的安全缝；找不到再把窗口放宽一倍
     ink_at_cut ≤ 1.5 记为 clean
 
 cleanRatio = clean / 候选行数        // 拒绝了也算分母：宁可回退也不劈字
@@ -459,16 +516,6 @@ cleanRatio = clean / 候选行数        // 拒绝了也算分母：宁可回退
             切点落在字缝（墨量≈0）
 ```
 
-### 11.4 行的三种处置
-
-| 类型 | 条件 | 处置 |
-|---|---|---|
-| 长行 | 墨宽 ≥ 0.62 版心宽 | 切成左右两半，各自占一行 |
-| 短行（左对齐） | 墨宽 < 0.62 版心宽且左边距正常 | 不切，整体等比放大，宽度不足时缩放上限为列宽 |
-| 短行（居中） | 左右边距差 < 0.06 版心宽且左边距 > 0.04 版心宽 | 不切，整体放大并居中 |
-
-标题、图注、段末短句都落在"短行"里——**它们是内容的一部分，必须保留，只是不参与切分**。
-
 ---
 
 ## 12. Step 9 · 重排计划
@@ -483,7 +530,7 @@ sFit     = contentW / slot
 sUnsplit = contentW / unsplitW         // [v1.1] 不切的行也必须装得下
 sEm      = targetEm / (0.92 × medH)    // 目标字身限制
 bodyScale = min(sFit, sUnsplit, sEm, maxScale)
-gain      = bodyScale × srcW / outW    // 相对“原图按屏宽显示”的收益
+gain      = bodyScale × k × srcW / outW   // k = analysisScale，见下
 若 gain < 1.25 → 放弃重排，直接看原图
 ```
 
@@ -492,7 +539,10 @@ gain      = bodyScale × srcW / outW    // 相对“原图按屏宽显示”的�
 - `outputWidth` 取屏幕像素宽，旋转、分屏时要重新规划（重新 planner，不重新 analyze）；
 - `slot` 取所有待切行的最大值，而不是中点：逐行切点在 ±2% 内浮动，按最大值缩放才能保证**每一行都不会被二次压缩**；
 - **[v1.1] `sUnsplit`**：只切“整行放不下”的行，同时保证不切的行也能按同一倍率放下。没有这一条，一行切不开的宽行只能被压进列宽，字号比同段小一截（`PlanAuditor` 会报 `body_scale_inconsistent`）；
-- `sEm` 限制让 4K 大字号截图不会被切成一屏五个字。
+- `sEm` 限制让 4K 大字号截图不会被切成一屏五个字；
+- **[0.5.1] `k` 必须乘进 `gain`**：`bodyScale` 是**分析图像素**上的倍率，`srcW/outW` 是**源图像素**口径。
+  漏掉 `k` 时（长图尤其明显，690×10305 只剩 107px 宽）gain 会虚高 `1/k` 倍，本该回退的页面
+  被当成"有收益"，最后渲染成左边一条窄列。
 
 ### 12.1b 按角色换算（v1.1）
 
@@ -544,11 +594,13 @@ gain      = bodyScale × srcW / outW    // 相对“原图按屏宽显示”的�
 ### 12.2 列宽与居中
 
 ```
-colW = min(contentW, slot × s)
-left = (outW - colW) / 2
+colW = contentW          // 列宽固定为整个版心宽
+left = inset             // 左右留白对称
 ```
 
-当 `sEm` 起作用时 `colW < contentW`，此时整列居中，左右留白对称；否则 `left = inset`。
+**列宽不再按 `slot × s` 收窄**（v1.1 的改动）：按行槽收窄会让"放得下的行"也被压缩，
+同一段出现忽大忽小的字号。切分后的半行靠左排；只有 `min(s, colW / 行宽)` 这一层压缩
+会真正收窄某一行的目标宽度。
 
 ### 12.3 顺序
 
@@ -567,11 +619,16 @@ left = (outW - colW) / 2
 ### 12.4 垂直间距
 
 ```
-gapOut = clamp(round(medGap × s), 6, 40)
-段间距：若某行与上一文字行的源间距 > 1.35 × medGap，行前额外加 0.9 × gapOut
+outEm     = 0.92 × medH × s
+sourceLineGap = max(0, medianPitch - medianLineHeight)
+lineGap   = clamp(round(sourceLineGap × s), 0.15 × outEm, 0.55 × outEm)
+paraExtra = max(0.8 × lineGap, 0.25 × outEm)
+blockGap  = max(1.6 × lineGap, 0.45 × outEm)
+段间距：若某行与上一文字行的源间距 > 1.35 × medGap，行前额外加 lineGap + paraExtra
 ```
 
 均匀行距会让文章变成一堵墙；源图里的段间距是重要的结构信息，必须保留。
+行距上限跟着**输出字身**走（不再写死 6–40px），字号放大时行距同步放大，×4 才不会挤在一起。
 
 ### 12.5 非文字块
 
@@ -620,6 +677,11 @@ sealed interface RenderItem {
 
 回退时 `ReflowPlan.fallbackReason` 非空，UI 按 01 文档第 8 节给提示。
 
+> **G5 的一个例外**：`splitEnabled = false`（切分关闭）时整段跳过 `minGain` 门槛——
+> 用户要的是"只放大不切"，不该因为收益不足被踢回原图。代价是这类页面**可能输出更小的字**
+> （`bodyScale < 1` 时没有下限保护，只有 `forceReflow` 有）。0.5 的 UI 已经不提供这个开关
+> （见 [01 §6](01-product.md)），属于潜在路径；若要恢复设置面板，先补上 `bodyScale ≥ 1` 的夹取。
+
 ---
 
 ## 14. 参数总表
@@ -667,7 +729,14 @@ sealed interface RenderItem {
 | 合计 | — | **约 90–100ms** | **< 60ms（中端机）** |
 
 - 全部是一维数组循环，无浮点矩阵、无 JNI 边界；
-- 分析位图 ≤ 1600×1600×1B = 2.5MB（灰度），`mask` 另 2.5MB；
+- 分析位图按 `analysisMaxPixels` 切条带，常驻 ≈ **7 字节/像素**（灰度 1 + 墨迹 1 + 候选 1 +
+  二值 mask 1 + 竖直游程 2（`ShortArray`）…），单遍 8MP 峰值约 60–70MB；
+- **条带并发是内存旋钮，不是 CPU 旋钮**：每条并发条带各自持有 ink/mask/游程，
+  1080×3000 约 16MB。0.5.1 时把自动值从 4 降到 2，并把"先全切再并行"改成
+  "取一条、分析一条、丢一条"（`StripLayoutAnalyzer.runSlices`）：1080×20000 的峰值从
+  ~124MB 降到 ~54MB；同机实测分析耗时 782ms（串行）/ 817ms（2 路）/ 636ms（4 路），
+  即并行带来的收益不到 25%，而内存是 2 倍以上的差别——所以默认值取 2；
+- 回归护栏：`:core:longPageMemoryTest`（`-Xmx96m`）跑 1080×20000，任何一条回退都会 OOM；
 - 渲染不在这一步：见 03 文档的瓦片渲染。
 
 ---
@@ -677,7 +746,7 @@ sealed interface RenderItem {
 | 输入 | 现象 | 当前行为 | 处理建议 |
 |---|---|---|---|
 | 竖排文字 | 行投影呈"竖条"，切不出行 | 文字行 < 3 → 原图 | v2：检测主方向后旋转 90° |
-| 图片下方图注 + 右侧正文 | 两者在同一行带 | 并成一条输出行（图注在左、正文在右） | 内容不丢但读起来夹生；行带只在垂直方向切 | 记录为已知限制（v1.1 手写标记样例暴露） |
+| 图片下方图注 + 右侧正文 | 两者在同一行带 | v1.3 的带内竖切会把左右拆开；拆不开时仍并成一条输出行（内容不丢但读起来夹生） | 记录为已知限制（v1.1 手写标记样例暴露） |
 | 报刊双栏 | 中线正好是栏沟，切完内容错位 | `cleanRatio` 可能通过，**结果会错** | [v1.1] 已实现 `MultiColumnDetector`：中线附近贯通竖带 + 两侧各有 ≥2 条长行 → `MULTI_COLUMN` → 原图 |
 | 表格 | 横线成为行，竖线成为"超高游程" | 多半整块判为 FIGURE → 整体放大，可用 | 可接受；表格切行本来就没有意义 |
 | 截图带状态栏/按钮 | 被当作短行或图块重排 | 内容保留，排版略怪 | v2：检测顶部/底部 UI 条并裁掉 |

@@ -105,6 +105,89 @@ class RowSegmenter(private val options: AnalysisOptions = AnalysisOptions()) {
         return RowSegmentResult(bands, medH, decoration, content)
     }
 
+    /**
+     * 在矩形子区 `[left, right) × [top, bottom)` 内重做一次行投影。
+     *
+     * 供**带内竖切**使用：一条超高行带被拆成左右两块之后，两边都要按自己的列范围重新切行
+     * ——左边可能是一整张图（一块一个带），右边可能是好几行字。
+     *
+     * 与 [segment] 的两点区别：
+     * 1. 不做装饰列检测（子区很窄，竖线与正文的相对关系已经变化，再做会误删正文列）；
+     * 2. 行高参考用整页中位数 [medianHeight]，避免子区只有两行时把合并阈值带偏。
+     */
+    fun segmentRegion(
+        mask: BooleanArray,
+        width: Int,
+        left: Int,
+        right: Int,
+        top: Int,
+        bottom: Int,
+        medianHeight: Float,
+    ): List<RowBand> {
+        if (width <= 0 || mask.isEmpty()) return emptyList()
+        val x0 = left.coerceIn(0, width)
+        val x1 = right.coerceIn(x0, width)
+        val pageHeight = mask.size / width
+        val y0 = top.coerceIn(0, pageHeight)
+        val y1 = bottom.coerceIn(y0, pageHeight)
+        val cols = x1 - x0
+        val rows = y1 - y0
+        if (cols <= 0 || rows <= 0) return emptyList()
+
+        val threshold = max(3f, options.rowMinInkPx * cols)
+        val ink = FloatArray(rows)
+        for (i in 0 until rows) {
+            val base = (y0 + i) * width
+            var c = 0
+            for (x in 0 until cols) if (mask[base + x0 + x]) c++
+            ink[i] = c.toFloat()
+        }
+        val smooth = MovingAverage.smooth3(ink)
+        val raw = Runs.runsOf(BooleanArray(rows) { smooth[it] >= threshold })
+        if (raw.isEmpty()) return emptyList()
+
+        val localMed = Stats.robustMedian(IntArray(raw.size) { raw[it].last - raw[it].first + 1 })
+        // 取整页中位数与**子区自己**的中位数里较小的那个：
+        // 子区里可能只有一张图（中位数 = 图高），也可能只有几行字（中位数 = 行高）。
+        // 用较大的那个会把 6 行字并成一条 280px 的“巨行”，用较小的那个最多是多留几条带，
+        // 后面还有 RowDecomposer 兜底。
+        val ref = when {
+            medianHeight <= 0f -> localMed.coerceAtLeast(1f)
+            localMed <= 0f -> medianHeight
+            else -> minOf(medianHeight, localMed)
+        }
+        val maxGap = max(2, (options.rowMergeGapRatio * ref).toInt())
+        val maxHeight = max(2, (options.rowMergeHeightRatio * ref).toInt())
+        val merged = mergeWithHeightCap(raw, maxGap, maxHeight)
+        val kept = merged.filter { (it.last - it.first + 1) >= options.rowMinHeightRatio * ref }
+        if (kept.isEmpty()) return emptyList()
+
+        val out = ArrayList<RowBand>(kept.size)
+        for (r in kept) {
+            val by0 = y0 + r.first
+            val by1 = y0 + r.last + 1
+            var bx0 = x1
+            var bx1 = x0
+            var inkCount = 0
+            for (y in by0 until by1) {
+                val base = y * width
+                for (x in x0 until x1) {
+                    if (mask[base + x]) {
+                        inkCount++
+                        if (x < bx0) bx0 = x
+                        if (x + 1 > bx1) bx1 = x + 1
+                    }
+                }
+            }
+            if (bx0 > bx1) {
+                bx0 = x0
+                bx1 = x1
+            }
+            out.add(RowBand(by0, by1, bx0, bx1, inkCount))
+        }
+        return out
+    }
+
     private fun project(mask: BooleanArray, width: Int, height: Int): FloatArray {
         val out = FloatArray(height)
         for (y in 0 until height) {

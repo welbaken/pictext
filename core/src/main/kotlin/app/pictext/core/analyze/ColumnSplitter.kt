@@ -52,7 +52,7 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
         if (pageWidth <= 0 || blocks.isEmpty()) {
             return SplitOutcome(blocks, metrics.textLeft, 0f, 0, 0, true)
         }
-        val roughWidth = max(1, metrics.roughWidth)
+        val longLineMinWidth = metrics.longLineThreshold
         val medH = max(4f, metrics.medianLineHeight)
         val textLines = blocks.flatMap { b ->
             when (b) {
@@ -80,7 +80,7 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
 
         val candidates = textLines.filter { it.role == LineRole.BODY || it.role == LineRole.HEADING }
         val longLines = candidates.filter {
-            it.band.width >= options.longLineRatio * roughWidth && !latinLike(it)
+            it.band.width >= longLineMinWidth && !latinLike(it)
         }
         if (longLines.size < 2) {
             return SplitOutcome(blocks, (metrics.textLeft + metrics.textRight) / 2, 0f, 0, 0, true)
@@ -313,13 +313,20 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
     }
 
     /**
-     * 找满足 [accept] 的连续列组，并跳过会劈开西文单词的组。
+     * 找满足 [accept] 的连续列组，按**加权评分**取最优的一刀，并跳过会劈开西文单词的组。
      *
-     * [balanceFirst] = true 时按**两半均衡**挑（`max(左半, 右半)` 最小），否则按“离中心最近”挑。
+     * 评分（v1.4，权重见 [AnalysisOptions.cutWeightCenter] 等）：
+     * ```
+     * center  = 1 - |x - center| / win                 离目标列越近越好
+     * gap     = min(1, 缝宽 / max(2, 0.35 × 行高))      缝越宽越像真边界（字距只有一半分）
+     * balance = 2 - 2 × max(左半, 右半) / 行宽          两半越均衡越好
+     * ink     = 1 - 缝内最干净列的墨量 / 低墨阈值        零墨满分
+     * ```
+     * [balanceFirst] = true 时 center 与 balance 的权重互换：估算全局列要稳（靠 center），
+     * 逐行下刀要均衡（靠 balance，等于白捡 `slotFor` 的倍率）。
      *
-     * 分工很重要：估算全局列时用“离中心最近”，列才稳定在版心中线附近（否则每行都往
-     * 自己的中点跑，列会随着参差的右边缘漂移）；逐行贴回时用“两半均衡”，
-     * 在窗口内挑到最均衡的那一刀，等于白捡 `slotFor` 的倍率。
+     * 旧的字典序（离中心最近 → 缝更宽）会让 1px 的噪点缝压过 12px 的真字缝；
+     * 加权后宽缝能补回一点距离差，但 center 仍占主导，列不会随参差的右边缘漂移。
      */
     private inline fun bestRun(
         p: ColumnInk,
@@ -335,10 +342,12 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
         val hi = min(p.left + p.width, center + win)
         if (hi <= lo) return null
         val lineRight = p.left + p.width
+        val lineWidth = max(1, p.width)
+        val wCenter = if (balanceFirst) options.cutWeightBalance else options.cutWeightCenter
+        val wBalance = if (balanceFirst) options.cutWeightCenter else options.cutWeightBalance
+        val fullGap = max(2f, options.cutGapFullRatio * medianHeight)
         var best = -1
-        var bestHalf = Int.MAX_VALUE
-        var bestDist = Int.MAX_VALUE
-        var bestWidth = 0
+        var bestScore = -1f
         var i = lo - p.left
         val end = hi - p.left
         while (i < end) {
@@ -352,24 +361,39 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
             if (gapWidth < minWidth) continue
             val mid = p.left + (start + i - 1) / 2
             if (p.splitsWord(mid, medianHeight, gapExemptPx)) continue
-            val half = max(mid - p.left, lineRight - mid)
-            val d = abs(mid - center)
-            val better = if (balanceFirst) {
-                half < bestHalf ||
-                    (half == bestHalf && d < bestDist) ||
-                    (half == bestHalf && d == bestDist && gapWidth > bestWidth)
-            } else {
-                d < bestDist ||
-                    (d == bestDist && half < bestHalf) ||
-                    (d == bestDist && half == bestHalf && gapWidth > bestWidth)
-            }
-            if (better) {
-                bestHalf = half
-                bestDist = d
-                bestWidth = gapWidth
+            val score = scoreCandidate(p, mid, gapWidth, center, win, lineWidth, lineRight, wCenter, wBalance, fullGap)
+            if (score > bestScore) {
+                bestScore = score
                 best = mid
             }
         }
         return if (best >= 0) best else null
+    }
+
+    /** 单个候选切点的加权得分；各项都归一化到 `0..1`。 */
+    private fun scoreCandidate(
+        p: ColumnInk,
+        x: Int,
+        gapWidth: Int,
+        center: Int,
+        win: Int,
+        lineWidth: Int,
+        lineRight: Int,
+        wCenter: Float,
+        wBalance: Float,
+        fullGap: Float,
+    ): Float {
+        val d = abs(x - center)
+        val centerScore = 1f - min(1f, d.toFloat() / max(1, win))
+        val gapScore = min(1f, gapWidth / fullGap)
+        val half = max(x - p.left, lineRight - x)
+        val balanceScore = (2f - 2f * half / lineWidth).coerceIn(0f, 1f)
+        val idx = (x - p.left).coerceIn(0, p.counts.size - 1)
+        val thr = max(1f, p.lowInkThreshold)
+        val inkScore = 1f - min(1f, p.counts[idx] / thr)
+        return wCenter * centerScore +
+            options.cutWeightGap * gapScore +
+            wBalance * balanceScore +
+            options.cutWeightInk * inkScore
     }
 }
