@@ -143,8 +143,20 @@ class CutPolicy(private val options: ReflowOptions = ReflowOptions(outputWidth =
                 // v1 行没有剖面特征：只认 line.cuts（安全字缝列），绝不强制。
                 v1Cut(line, target, low, high)
             } else {
-                hardCut(features, height, target, low, high)
-                    ?: softCut(features, target, low, high)
+                // 拉丁行（英文单词/代码/URL）的刀口门槛要更严：抗锯齿会把词内字缝也
+                // 做成 1–3px 的零墨列，按汉字行的 0.10×行高去切，就会把 "Andrius"
+                // 切成 "Andriu" + "s"（V2-47 实测）。拉丁词的分界是**词间空格**，
+                // 宽度通常 ≥0.25×行高，用 0.28 做门槛既避开字缝，又放得过词间空格。
+                val hardMinGap = if (features.latinLike) {
+                    // 拉丁行：词间空格约占 0.2–0.35×行高，词内字缝只有 1–3px。
+                    // 0.18×行高加 3px 地板，既能吃掉字缝，也不会在大字号标题上把
+                    // 合格的词间空格也拒掉（0.28 时会把 59px 高的标题全判成“切不动”）。
+                    max(3, (LATIN_GAP_RATIO * height).roundToInt())
+                } else {
+                    max(2, (HARD_GAP_RATIO * height).roundToInt())
+                }
+                hardCut(features, height, target, low, high, hardMinGap)
+                    ?: if (features.latinLike) null else softCut(features, target, low, high)
                     ?: if (allowForced && canForce(line, features, height, forcedUsed)) {
                         forcedCut(features, height, target, low, high)?.also { forcedUsed++ }
                     } else {
@@ -180,8 +192,8 @@ class CutPolicy(private val options: ReflowOptions = ReflowOptions(outputWidth =
         target: Int,
         low: Int,
         high: Int,
+        minGap: Int,
     ): Cut? {
-        val minGap = max(2, (HARD_GAP_RATIO * height).roundToInt())
         var best = -1
         var bestDistance = Int.MAX_VALUE
         for (gap in features.hardGaps) {
@@ -385,6 +397,9 @@ class CutPolicy(private val options: ReflowOptions = ReflowOptions(outputWidth =
         /** 硬缝宽度下限 = 0.10×行高。 */
         const val HARD_GAP_RATIO = 0.10f
 
+        /** 拉丁行的硬缝下限 = 0.28×行高：词间空格才够宽，词内字缝会被排除（V2-47）。 */
+        const val LATIN_GAP_RATIO = 0.18f
+
         /** “宽墨簇” = 0.60×行高；两侧都窄就不许强制。 */
         const val WIDE_CLUSTER_RATIO = 0.60f
 
@@ -398,3 +413,5 @@ class CutPolicy(private val options: ReflowOptions = ReflowOptions(outputWidth =
         const val MAX_FORCED_RUN_RATIO = 2.6f
     }
 }
+
+

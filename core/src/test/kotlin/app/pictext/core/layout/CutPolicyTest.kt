@@ -233,6 +233,81 @@ class CutPolicyTest {
     }
 
     // -----------------------------------------------------------------------
+    // 6b. 拉丁行：只许在词间空格切（V2-47）
+    // -----------------------------------------------------------------------
+
+    /**
+     * 拉丁行 `Andrius Sytas` 的简化剖面：词内每列都有墨，词间有空白；
+     * 但抗锯齿让某些字缝也变成 2–3px 的零墨列——按汉字行 0.10×行高（=2px）的门槛，
+     * 这些字缝会被当成刀口，切出 "Andriu" + "s"。
+     */
+    private fun latinLine(gaps: List<IntRange>): TextLine {
+        val band = RectI(0, 0, 400, 24)
+        val ink = profile(0, 400) { x ->
+            if (gaps.any { x in it }) 0 else 2
+        }
+        return line(
+            band,
+            LineCutFeatures(
+                hardGaps = gaps,
+                latinLike = true,
+                sensitive = true,
+                density = 0.5f,
+                maxRun = 12,
+                minInkColumn = 200,
+                profile = ink,
+            ),
+        )
+    }
+
+    @Test
+    fun `latin rows never cut inside a word`() {
+        // 词内细缝 197..199（3px，汉字行的门槛会接受），真正的词间空格在 240..246。
+        val wordGapInside = 197..199
+        val realSpace = 240..246
+        val line = latinLine(listOf(wordGapInside, realSpace))
+        val decision = policy.decide(line, contentWidth = 300, scale = 2f, allowForced = false)
+
+        for (seg in decision.segments.dropLast(1)) {
+            assertTrue(
+                "切点 ${seg.x1} 落在词内细缝 $wordGapInside 里，会把单词劈开",
+                seg.x1 !in wordGapInside,
+            )
+        }
+        assertConservation(line, decision)
+    }
+
+    @Test
+    fun `latin rows compress rather than cut when only narrow gaps exist`() {
+        // 整行只有 3px 的词内细缝：没有合格的词间空格 → 宁可不切（压缩），也不劈词。
+        val line = latinLine(listOf(197..199))
+        val decision = policy.decide(line, contentWidth = 300, scale = 2f, allowForced = false)
+        assertEquals("不应该切出多段", 1, decision.count)
+        assertTrue("这种情况应当压缩", decision.compressed)
+    }
+
+    @Test
+    fun `cjk rows still accept narrow gaps`() {
+        // 对照组：同样的 3px 缝在汉字行里仍然可切（门槛 0.10×行高）。
+        val band = RectI(0, 0, 400, 24)
+        val gap = 197..199
+        val ink = profile(0, 400) { x -> if (x in gap) 0 else 2 }
+        val cjk = line(
+            band,
+            LineCutFeatures(
+                hardGaps = listOf(gap),
+                cjkDominant = true,
+                density = 0.5f,
+                maxRun = 10,
+                minInkColumn = 198,
+                profile = ink,
+            ),
+        )
+        val decision = policy.decide(cjk, contentWidth = 300, scale = 2f, allowForced = false)
+        assertTrue("汉字行应当切成 2 段，实际 ${decision.count}", decision.count >= 2)
+    }
+
+    // -----------------------------------------------------------------------
     // 7. 段数守恒（每个用例都断言，这里再集中扫一遍代表性场景）
     // -----------------------------------------------------------------------
 
