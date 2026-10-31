@@ -28,6 +28,11 @@ data class ReflowOptions(
     val maxScale: Float = 3.0f,
     val minGain: Float = 1.25f,
     val figMaxScale: Float = 2.2f,
+
+    /** 窄图阈值（相对页宽）：比它更窄的图块视为图标/头像/气泡，**保留左右位置**；
+     * 更宽的是正文插图，居中排版。0.35 来自实测：聊天头像 ~5%、气泡 ~40–90%、
+     * 文档插图通常 ≥50%。 */
+    val narrowFigureRatio: Float = 0.35f,
     val gapClamp: IntRange = 6..40,
     val paragraphGapRatio: Float = 1.35f,
     val splitEnabled: Boolean = true,
@@ -63,3 +68,4 @@ data class ReflowOptions(
     /** [v2] 标题输出字高上限（× 正文输出字高）；`0` = 不设上限。 */
     val headingMaxBodyRatio: Float = 0f,
 )
+

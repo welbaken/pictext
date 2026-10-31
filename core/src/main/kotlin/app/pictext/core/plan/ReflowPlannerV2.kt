@@ -218,7 +218,18 @@ internal class ReflowPlannerV2(private val cutPolicy: CutPolicy = CutPolicy()) {
                     val src = region.bounds.clampTo(layout.srcWidth, layout.srcHeight)
                     if (src.isEmpty) continue
                     if (emitted) y += blockGap
-                    val dx = (outW - destW) / 2
+                    // 水平位置：**窄图必须保留左右关系**。聊天头像、点赞图标、气泡这些只有 3–40px 宽，
+                    // 原来一律居中，等于把“谁说的”“图标属于哪一行”抹掉——v2 在这类页面上看着
+                    // 比 v1 更差，根因就在这里（V2-46）。
+                    // 宽图（正文插图/照片）仍居中：文档排版里居中才是对的。
+                    val narrow = figW < options.narrowFigureRatio * layout.srcWidth
+                    val dx = if (narrow) {
+                        // 按比例映射后夹到列内：源图比输出更宽时，右边缘元素自然贴右。
+                        (inset + src.left * sf).roundToInt()
+                            .coerceIn(inset, inset + max(0, contentW - destW))
+                    } else {
+                        inset + (contentW - destW) / 2
+                    }
                     items.add(
                         RenderItem.Figure(
                             src = src,
@@ -351,3 +362,4 @@ internal class ReflowPlannerV2(private val cutPolicy: CutPolicy = CutPolicy()) {
         const val MAX_PLAN_HEIGHT = 300_000
     }
 }
+

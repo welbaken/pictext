@@ -246,6 +246,41 @@ class ReflowPlannerV2Test {
     }
 
     @Test
+    fun `narrow figures keep their left right side instead of being centred`() {
+        // 聊天页：左侧机器人头像 34px、右侧用户头像 32px，中间是正文。
+        // 两者都是“窄图”，位置本身是语义（谁说的），不能被居中抹掉。
+        val left = LayoutRegion(id = 0, kind = RegionKind.FIGURE, order = 0, bounds = RectI(8, 60, 42, 110))
+        val right = LayoutRegion(id = 1, kind = RegionKind.FIGURE, order = 1, bounds = RectI(1040, 60, 1072, 110))
+        val body = LayoutRegion(
+            id = 2, kind = RegionKind.TEXT, order = 2, bounds = RectI(60, 130, 620, 152),
+            lines = listOf(line(60, 620, 130, 22)),
+        )
+        val plan = planner.plan(layoutOf(listOf(left, right, body)), ReflowOptions(outputWidth = 1080))
+        val figures = plan.items.filterIsInstance<RenderItem.Figure>()
+        assertEquals("两个头像都要保留", 2, figures.size)
+        val avatarLeft = figures.first { it.src.left < 500 }
+        val avatarRight = figures.first { it.src.left > 500 }
+        assertTrue("左头像应靠左：${avatarLeft.dest}", avatarLeft.dest.left < 360)
+        assertTrue("右头像应靠右：${avatarRight.dest}", avatarRight.dest.right > 720)
+        for (f in figures) {
+            assertTrue("不得越界：${f.dest}", f.dest.right <= 1080 && f.dest.left >= 0)
+        }
+    }
+
+    @Test
+    fun `wide photos stay centred`() {
+        val photo = LayoutRegion(id = 0, kind = RegionKind.FIGURE, order = 0, bounds = RectI(40, 100, 1040, 500))
+        val body = LayoutRegion(
+            id = 1, kind = RegionKind.TEXT, order = 1, bounds = RectI(40, 520, 650, 542),
+            lines = listOf(line(40, 650, 520, 22)),
+        )
+        val plan = planner.plan(layoutOf(listOf(photo, body)), ReflowOptions(outputWidth = 1080))
+        val figure = plan.items.filterIsInstance<RenderItem.Figure>().single()
+        val leftGap = figure.dest.left
+        val rightGap = 1080 - figure.dest.right
+        assertTrue("宽图应居中：left=$leftGap right=$rightGap", kotlin.math.abs(leftGap - rightGap) <= 2)
+    }
+    @Test
     fun `every item stays inside the output canvas`() {
         val plan = planner.plan(screenshotLayout(), ReflowOptions(outputWidth = 1080))
         for (item in plan.items) {
@@ -311,3 +346,4 @@ class ReflowPlannerV2Test {
         assertEquals(expected, s, 0.01f)
     }
 }
+
