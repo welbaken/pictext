@@ -7,7 +7,7 @@
 > | 任务卡 | 现状 | 落在哪 |
 > |---|---|---|
 > | P0-1 行带合并护栏 | 已实现 | `RowSegmenter`（`rowMergeHeightRatio`） |
-> | P0-2 大带再分解 + 角色 | 已实现；**`denseIsland` 从未被使用，0.5.1 已删除** | `RowDecomposer` / `RowClassifier` |
+> | P0-2 大带再分解 + 角色 | 已实现；**`denseIsland` 从未被使用，0.5.2 已删除** | `RowDecomposer` / `RowClassifier` |
 > | P0-3 切分安全门 | 已实现（另有 v1.2 分组列、v1.4 加权评分） | `ColumnSplitter` |
 > | P0-4 统一缩放 | 已实现 | `ReflowPlanner` |
 > | P0-5 诚实回退 | 已实现（`weak_cut` 且无收益 → `ORIGINAL`） | `ReflowPlanner` |
@@ -23,7 +23,7 @@
 > 代码基线：当前 `core/`（`RowSegmenter` → `RowDecomposer` → `RowClassifier` → `ColumnSplitter` → `ReflowPlanner` → `PlanAuditor`）。
 > 范围：v1.1（P0）/ v1.2（P1）/ v1.3（P2）。仍然不引入 OCR、模型、网络和第三方图像库。
 > 状态：**v1.1 已完成**（2026-10-29，结果与偏差见 §0.1）；v1.2 的 P1-1/P1-3/P1-4 已实现，
-> P1-2 做过但样例不入库（见上表），v1.3 的带内竖切在 0.5.1 落地。
+> P1-2 做过但样例不入库（见上表），v1.3 的带内竖切在 0.5.2 落地。
 
 ---
 
@@ -384,7 +384,7 @@ powershell -ExecutionPolicy Bypass -File scripts/test-samples.ps1
    - `h/medH`、`density`、`maxRun/medH`（已有）；
    - `maxHorizontalGap`：行带内相邻墨簇的最大空白宽度；
    - `denseIsland`：局部窗口（约 1×medH 见方）内墨密度 > 0.55 的区域；
-     > **注：这项特征最终没有参与判定（只算不用），0.5.1 已从代码里删掉。**
+     > **注：这项特征最终没有参与判定（只算不用），0.5.2 已从代码里删掉。**
    - `rowRegularity`：P0-1/P0-2 后的子行间距变异系数；
    - 细竖直装饰列：`maxRun ≥ 2×medH` 且列宽 ≤ 2% 页宽 → 计算横向间隙时忽略（引用竖线）。
 

@@ -39,9 +39,11 @@ android {
         targetSdk = 35
         // 0.5 是 v1-only 包：不再随包带 ONNX Runtime + 4.9MB 模型。
         // 0.5.1（code 7）修长图：分析图宽度优先 + gain 换算回源图 + 超长图条带分析。
-        // versionCode 6 从上一版 2.0.0-beta1/0.5.0-full（code 5）升级；0.5.1 再 +1。
-        versionCode = 7
-        versionName = "0.5.1"
+        // 0.5.2（code 8）修交互与内存：强制档语义、失败可重试、审计坐标空间、
+        // 条带内存（峰值 ~124MB → 54MB）、渲染失败留痕、位图晚一帧回收、v1.3 带内竖切。
+        // versionCode 6 从上一版 2.0.0-beta1/0.5.0-full（code 5）升级；0.5.1 +1、0.5.2 +1。
+        versionCode = 8
+        versionName = "0.5.2"
     }
 
     buildFeatures {

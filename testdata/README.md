@@ -52,7 +52,7 @@ powershell -ExecutionPolicy Bypass -File scripts/test-samples.ps1
 powershell -ExecutionPolicy Bypass -File scripts/score-samples.ps1
 ```
 
-**跳过规则（0.5.1 起）**：目录不存在 → 整类测试跳过（CI 没样例也不该红）；
+**跳过规则（0.5.2 起）**：目录不存在 → 整类测试跳过（CI 没样例也不该红）；
 目录存在 → 里面每一张都必须通过不变量检查，**单个文件缺失或不合规是失败，不再静默跳过**。
 唯一按文件名依赖的是长图回归 `006v119zgy1iik2r1f4z0j30j67y9npf.jpg`（690×10305），
 它的断言是"必须回退原图"，样例被删掉时该用例会失败并提示补文件。

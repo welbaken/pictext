@@ -474,7 +474,7 @@ private fun TileImage(session: DocumentSession, index: Int, modifier: Modifier) 
 
 - `produceState` 在 item 滚出屏幕时自动取消，避免快速滑动时堆积任务；
 - **必须回收位图**：`DisposableEffect(bitmap)` 里把组合期取到的旧位图交给
-  `render/BitmapRecycler`（0.5.1 起）。×4 的瓦片 1080×1024 一张约 4MB，只靠 GC 的话
+  `render/BitmapRecycler`（0.5.2 起）。×4 的瓦片 1080×1024 一张约 4MB，只靠 GC 的话
   快速滚动会把几十张丢给 finalizer，低内存机器直接 OOM；
   但**不能立刻 `recycle()`**——display list 可能还持有这一帧的位图，极端时序会抛
   `Canvas: trying to use a recycled bitmap`。`BitmapRecycler` 把它 `Handler.post` 到当前帧之后
@@ -748,7 +748,7 @@ ink/mask/游程，4 路会把 1080×20000 的峰值顶到 ~124MB，而收益不�
 **私钥一旦外泄就必须换新 keystore**（私钥在文件里，改口令不能挽回）。
 对外的正式发版建议另配一把新钥匙 + Google Play 的 Play App Signing。
 
-### 14.2 v1-only 发布口径（0.5.1）
+### 14.2 v1-only 发布口径（0.5.2）
 
 v2（版面模型那一套）**只留在 `:core` / `:cli` 做技术验证，不进入发行包**。这条约束由两道
 机检保证，不是靠"记得别引用"：
