@@ -5,7 +5,7 @@ import app.pictext.core.model.FallbackReason
 import app.pictext.core.model.PlanMode
 import app.pictext.core.model.RenderItem
 import app.pictext.core.plan.ReflowOptions
-import app.pictext.core.plan.ReflowPlanner
+import app.pictext.core.plan.planDocLayout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -29,7 +29,7 @@ class FixtureComposerTest {
         val gt = Fixtures.load(id, width) ?: return null
         val page = PageContext(srcWidth = gt.width, srcHeight = gt.height)
         val layout = PageComposer().compose(page, gt.regionsForLayout(), CoverageReport.EMPTY)
-        val plan = ReflowPlanner().plan(layout, ReflowOptions(outputWidth = outWidth))
+        val plan = planDocLayout(layout, ReflowOptions(outputWidth = outWidth))
         return Triple(gt, layout, plan)
     }
 

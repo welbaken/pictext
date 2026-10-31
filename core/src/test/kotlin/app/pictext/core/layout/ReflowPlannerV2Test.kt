@@ -14,7 +14,7 @@ import app.pictext.core.model.RegionKind
 import app.pictext.core.model.RenderItem
 import app.pictext.core.model.TextLine
 import app.pictext.core.plan.ReflowOptions
-import app.pictext.core.plan.ReflowPlanner
+import app.pictext.core.plan.planDocLayout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -27,8 +27,6 @@ import kotlin.math.roundToInt
  * 整行文字需要切 2 段（否则 `s` 撑不住），半宽长行也需要切 2 段。
  */
 class ReflowPlannerV2Test {
-
-    private val planner = ReflowPlanner()
 
     private fun line(
         x0: Int,
@@ -94,7 +92,7 @@ class ReflowPlannerV2Test {
     @Test
     fun `screenshot case cuts the wide rows and keeps the short ones whole`() {
         val layout = screenshotLayout()
-        val plan = planner.plan(layout, ReflowOptions(outputWidth = 1080))
+        val plan = planDocLayout(layout, ReflowOptions(outputWidth = 1080))
 
         assertEquals(PlanMode.REFLOW, plan.mode)
         assertEquals(FallbackReason.NONE, plan.fallback)
@@ -144,7 +142,7 @@ class ReflowPlannerV2Test {
                 lines = listOf(line(40, 600, 160, 16, LineRole.CAPTION, hardCutAt(320))),
             ),
         )
-        val plan = planner.plan(layoutOf(regions), ReflowOptions(outputWidth = 1080))
+        val plan = planDocLayout(layoutOf(regions), ReflowOptions(outputWidth = 1080))
         val s = plan.bodyScale
         assertTrue("s 必须 >1（只放大）", s >= 1f)
         for (item in plan.items.filterIsInstance<RenderItem.TextRow>()) {
@@ -163,7 +161,7 @@ class ReflowPlannerV2Test {
             id = 1, kind = RegionKind.TEXT, order = 1, bounds = RectI(40, 60, 900, 82),
             lines = listOf(line(40, 900, 60, 22)),
         )
-        val plan = planner.plan(layoutOf(listOf(chrome, body)), ReflowOptions(outputWidth = 1080))
+        val plan = planDocLayout(layoutOf(listOf(chrome, body)), ReflowOptions(outputWidth = 1080))
         val chromeRow = plan.items.filterIsInstance<RenderItem.TextRow>().first { it.role == LineRole.UI }
         val scale = chromeRow.dest.width.toFloat() / chromeRow.src.width
         assertTrue("chrome scale=$scale", scale <= 1.0f + 0.001f)
@@ -180,7 +178,7 @@ class ReflowPlannerV2Test {
             ),
         )
         val layout = PageComposer().compose(small, regions, CoverageReport.EMPTY)
-        val plan = planner.plan(layout, ReflowOptions(outputWidth = 1080))
+        val plan = planDocLayout(layout, ReflowOptions(outputWidth = 1080))
         assertEquals(PlanMode.ORIGINAL, plan.mode)
         assertEquals(FallbackReason.GAIN_TOO_SMALL, plan.fallback)
     }
@@ -204,7 +202,7 @@ class ReflowPlannerV2Test {
         val regions = listOf(
             LayoutRegion(id = 0, kind = RegionKind.TEXT, order = 0, bounds = RectI(40, 0, 940, 260), lines = lines),
         )
-        val plan = planner.plan(layoutOf(regions), ReflowOptions(outputWidth = 1080))
+        val plan = planDocLayout(layoutOf(regions), ReflowOptions(outputWidth = 1080))
         assertEquals(FallbackReason.LAYOUT_FALLBACK, plan.fallback)
         assertEquals(PlanMode.ORIGINAL, plan.mode)
         assertTrue(plan.notes.any { it.startsWith("layout_forced_cut_high") })
@@ -223,7 +221,7 @@ class ReflowPlannerV2Test {
         val regions = listOf(
             LayoutRegion(id = 0, kind = RegionKind.TEXT, order = 0, bounds = RectI(40, 0, 940, 80), lines = listOf(sensitive, ok)),
         )
-        val plan = planner.plan(layoutOf(regions), ReflowOptions(outputWidth = 1080))
+        val plan = planDocLayout(layoutOf(regions), ReflowOptions(outputWidth = 1080))
         // 敏感行没刀口 → 100% 敏感行被压缩 → 超过 5% → 回退 v1（docs/07 §4.9）。
         assertEquals(FallbackReason.LAYOUT_FALLBACK, plan.fallback)
         assertTrue(plan.notes.any { it.startsWith("layout_sensitive_compressed") })
@@ -238,7 +236,7 @@ class ReflowPlannerV2Test {
             id = 1, kind = RegionKind.TEXT, order = 1, bounds = RectI(0, 220, 900, 242),
             lines = listOf(line(0, 900, 220, 22)),
         )
-        val plan = planner.plan(layoutOf(listOf(fig, body)), ReflowOptions(outputWidth = 1080))
+        val plan = planDocLayout(layoutOf(listOf(fig, body)), ReflowOptions(outputWidth = 1080))
         val figure = plan.items.filterIsInstance<RenderItem.Figure>().single()
         val scale = figure.dest.width.toFloat() / figure.src.width
         assertTrue("figure scale=$scale", scale >= 1f && scale <= 2.2f + 0.001f)
@@ -255,7 +253,7 @@ class ReflowPlannerV2Test {
             id = 2, kind = RegionKind.TEXT, order = 2, bounds = RectI(60, 130, 620, 152),
             lines = listOf(line(60, 620, 130, 22)),
         )
-        val plan = planner.plan(layoutOf(listOf(left, right, body)), ReflowOptions(outputWidth = 1080))
+        val plan = planDocLayout(layoutOf(listOf(left, right, body)), ReflowOptions(outputWidth = 1080))
         val figures = plan.items.filterIsInstance<RenderItem.Figure>()
         assertEquals("两个头像都要保留", 2, figures.size)
         val avatarLeft = figures.first { it.src.left < 500 }
@@ -274,7 +272,7 @@ class ReflowPlannerV2Test {
             id = 1, kind = RegionKind.TEXT, order = 1, bounds = RectI(40, 520, 650, 542),
             lines = listOf(line(40, 650, 520, 22)),
         )
-        val plan = planner.plan(layoutOf(listOf(photo, body)), ReflowOptions(outputWidth = 1080))
+        val plan = planDocLayout(layoutOf(listOf(photo, body)), ReflowOptions(outputWidth = 1080))
         val figure = plan.items.filterIsInstance<RenderItem.Figure>().single()
         val leftGap = figure.dest.left
         val rightGap = 1080 - figure.dest.right
@@ -282,7 +280,7 @@ class ReflowPlannerV2Test {
     }
     @Test
     fun `every item stays inside the output canvas`() {
-        val plan = planner.plan(screenshotLayout(), ReflowOptions(outputWidth = 1080))
+        val plan = planDocLayout(screenshotLayout(), ReflowOptions(outputWidth = 1080))
         for (item in plan.items) {
             assertTrue("dest.left ${item.dest}", item.dest.left >= 0)
             assertTrue("dest.right ${item.dest}", item.dest.right <= 1080)
@@ -312,7 +310,7 @@ class ReflowPlannerV2Test {
         val regions = listOf(
             LayoutRegion(id = 0, kind = RegionKind.TEXT, order = 0, bounds = RectI(0, 0, 1000, 22), lines = listOf(line)),
         )
-        val plan = planner.plan(layoutOf(regions), ReflowOptions(outputWidth = 600, targetEm = 60))
+        val plan = planDocLayout(layoutOf(regions), ReflowOptions(outputWidth = 600, targetEm = 60))
         val rows = plan.items.filterIsInstance<RenderItem.TextRow>()
         assertTrue(rows.isNotEmpty())
         val segments = rows.maxOf { it.segments }
@@ -324,7 +322,7 @@ class ReflowPlannerV2Test {
 
     @Test
     fun `total width of the segments equals the source line width`() {
-        val plan = planner.plan(screenshotLayout(), ReflowOptions(outputWidth = 1080))
+        val plan = planDocLayout(screenshotLayout(), ReflowOptions(outputWidth = 1080))
         val d = plan.items.filterIsInstance<RenderItem.TextRow>().filter { it.regionIndex == 2 }
         assertEquals(2, d.size)
         val total = d.sumOf { it.src.width }
@@ -335,7 +333,7 @@ class ReflowPlannerV2Test {
 
     @Test
     fun `plan height stays reasonable for a dense page`() {
-        val plan = planner.plan(screenshotLayout(), ReflowOptions(outputWidth = 1080))
+        val plan = planDocLayout(screenshotLayout(), ReflowOptions(outputWidth = 1080))
         assertTrue(plan.height in 1..300_000)
         val s = plan.bodyScale
         assertEquals(s, plan.scale, 0.0001f)

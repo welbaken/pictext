@@ -41,29 +41,40 @@ pictext/
 ├─ core/
 │  ├─ build.gradle.kts                     # kotlin("jvm")，无 Android
 │  ├─ src/main/kotlin/app/pictext/core/
-│  │  ├─ model/Geometry.kt                 # RectI / SizeI / RectI 扩展
+│  │  ├─ model/Geometry.kt                 # RectI / 坐标换算
 │  │  ├─ model/GrayImage.kt
 │  │  ├─ model/PageLayout.kt               # TextLine / Block / Paragraph / Figure / Diagnostics
-│  │  ├─ model/ReflowPlan.kt               # RenderItem / TileRange / PlanMode / FallbackReason
+│  │  ├─ model/ReflowPlan.kt               # RenderItem / PlanMode / FallbackReason / LayoutSummary(v2)
 │  │  ├─ analyze/AnalysisOptions.kt
-│  │  ├─ analyze/LayoutAnalyzer.kt         # 编排 Step 1..8
+│  │  ├─ analyze/AnalysisScale.kt          # 宽度优先定标 + 是否需要切条带
+│  │  ├─ analyze/LayoutAnalyzer.kt         # 编排 Step 1..8（必要时转 StripLayoutAnalyzer）
 │  │  ├─ analyze/BackgroundEstimator.kt    # Step 2
 │  │  ├─ analyze/Binarizer.kt              # Step 3 + Otsu
-│  │  ├─ analyze/RowSegmenter.kt           # Step 4
-│  │  ├─ analyze/BlockClassifier.kt        # Step 5 + Step 6
+│  │  ├─ analyze/RowSegmenter.kt           # Step 4（含装饰列剔除、子区分块投影）
+│  │  ├─ analyze/RowDecomposer.kt          # Step 4b 大带再分解
+│  │  ├─ analyze/BlockClassifier.kt        # Step 5 + Step 6（含 v1.3 带内竖切）
+│  │  ├─ analyze/BandRegionSplitter.kt     # v1.3 图文混排的区域级竖切
+│  │  ├─ analyze/RowClassifier.kt          # 行级角色特征与判定
+│  │  ├─ analyze/ColumnInk.kt              # 行内列墨剖面（字缝/劈词判定）
+│  │  ├─ analyze/WordGapFinder.kt          # 拉丁/URL 安全切分（实验）
 │  │  ├─ analyze/PageMetrics.kt            # Step 7
+│  │  ├─ analyze/MultiColumnDetector.kt    # P1-4 多栏安全网
 │  │  ├─ analyze/ColumnSplitter.kt         # Step 8
+│  │  ├─ analyze/StripAnalysis.kt          # P2 条带分析 + 合并
 │  │  ├─ plan/ReflowOptions.kt
-│  │  ├─ plan/ReflowPlanner.kt             # Step 9 + Step 10
-│  │  └─ util/{Runs.kt, Otsu.kt, MovingAverage.kt}
+│  │  ├─ plan/PlanGeometry.kt              # outW / inset / contentW（v1 与 v2 共用）
+│  │  ├─ plan/ReflowPlanner.kt             # Step 9 + Step 10（v1，不引用 v2）
+│  │  ├─ plan/PlanAudit.kt                 # 计划审计（块丢失/越界/倍率一致）
+│  │  └─ util/{Runs.kt, Otsu.kt, MovingAverage.kt, Stats.kt, Grayscale.kt}
 │  └─ src/test/kotlin/app/pictext/core/
-│     ├─ SyntheticPage.kt                  # Java2D 生成测试图
+│     ├─ TestSupport.kt                    # 灰度/合成页工具
 │     ├─ BackgroundEstimatorTest.kt
 │     ├─ RowSegmenterTest.kt
 │     ├─ BlockClassifierTest.kt
 │     ├─ ColumnSplitterTest.kt
 │     ├─ ReflowPlannerTest.kt
-│     └─ GoldenTest.kt                     # 端到端，容忍 ±1px
+│     ├─ GoldenTest.kt                     # 端到端，容忍 ±1px
+│     └─ RealImageRegressionTest.kt        # 真实样例：目录在即必须全过
 ├─ cli/
 │  └─ src/main/kotlin/app/pictext/cli/Main.kt
 ├─ app/
@@ -573,12 +584,15 @@ sealed interface ViewerUiState {
 }
 
 data class PageState(
-    val title: String,
+    val key: String,              // 源图内容 SHA-256，用于阅读进度
     val mode: PlanMode,
-    val plan: ReflowPlan,
-    val tileCount: Int,
+    val plan: ReflowPlan?,
     val fallback: FallbackReason,
-    val originalAvailable: Boolean,
+    val loading: Boolean,
+    val failure: FailureKind?,
+    val progress: Float,
+    val version: Int,             // 重新规划后自增，瓦片按它重渲染
+    val multiplier: Float,        // 生成当前计划时的重排倍率（1.0 = ×2，2.0 = ×4）
 )
 ```
 
@@ -606,8 +620,12 @@ data class AppSettings(
 ```
 
 - DataStore Preferences，`Flow<AppSettings>`；
-- `FORCE_TWO`：忽略 `splitLineRatio`，所有非居中行都切（用于调试/特殊版面）；
-- `OFF`：`PlanMode.NO_SPLIT`，只按栏宽放大，不切；
+- **0.5 起没有设置面板**：字号与切分方式固定为默认值（16sp / AUTO），由底栏三档
+  （原图 / ×2 / ×4）取代（见 [01 §6](01-product.md)）。`AppSettings` 仍然从 DataStore 读取，
+  旧版本存下的值继续生效；仓库里不再有写入路径，改设置后重规划的逻辑保留在 ViewModel 里；
+- `FORCE_TWO`：忽略长行门槛，所有非居中 BODY/HEADING 行都切（用于调试/特殊版面）；
+- `OFF`：只放大不切（`PlanMode.NO_SPLIT`）；注意它同时会跳过 `minGain` 回退，
+  见 [02 §13](02-algorithm.md) 的 G5；
 - 修改后 `planVersion++`，触发重新规划与瓦片重渲染。
 
 ## 11. 并发
@@ -638,10 +656,13 @@ data class AppSettings(
 
 ## 14. 构建与产物
 
-- `./gradlew :core:test`：算法单测（CI 必跑）
+- `./gradlew :core:test`：算法单测（CI 必跑；`testdata/samples/` 存在时会连带跑真实图回归）
+- `./gradlew :core:longPageMemoryTest`：长图内存回归（1080×20000 @ `-Xmx96m`，`:check` 已挂）
 - `./gradlew :cli:run --args="in.png out/ --out-width 1080"`：桌面调参
 - `./gradlew :app:assembleDebug`
 - `./gradlew :app:assembleRelease`：开 R8，检查 APK < 8MB
+- `scripts/verify.ps1`：一键（单测 + debug 构建）
+- `scripts/verify-v1-only.ps1`：一键（release 构建 + v1-only 门禁，见 14.2）
 
 ### 14.1 签名（v1.1）
 
@@ -659,6 +680,22 @@ data class AppSettings(
 口令用 `keytool -storepasswd -keystore … -storepass <旧> -new <新>` 轮换；改口令只保护文件本身，
 **私钥一旦外泄就必须换新 keystore**（私钥在文件里，改口令不能挽回）。
 对外的正式发版建议另配一把新钥匙 + Google Play 的 Play App Signing。
+
+### 14.2 v1-only 发布口径（0.5.1）
+
+v2（版面模型那一套）**只留在 `:core` / `:cli` 做技术验证，不进入发行包**。这条约束由两道
+机检保证，不是靠"记得别引用"：
+
+| 检查 | 手段 | 失败表现 |
+|---|---|---|
+| 代码不可达 | v1 的 `ReflowPlanner` **不引用** `ReflowPlannerV2`；v1/v2 分流在 `SmartReflow`（只有 CLI 用） | 若有人把 v2 分支加回 v1 planner，R8 会把 v2 整条链路保留下来，第二道检查报错 |
+| 产物不含 v2 | `scripts/verify-v1-only.ps1`：`classes.dex` 不得出现 v2 专有常量；R8 `mapping.txt` 不得出现 v2 业务类 | 门禁直接失败并列出命中的类/常量 |
+
+允许残留的只有被 v1 模型字段引用的**类型**（当前实际只剩 `LayoutStrategy` / `CutKind` 两个枚举，
+没有方法体逻辑）；`LayoutPipeline`、`CutPolicy`、`CoverageAuditor`、`ReflowPlannerV2` 等
+都会整类消失。APK 实测 1.19MB（0.5 之前的 v2 包是 24.59MB）。
+
+**注意**：这只保证 release 产物；`assembleDebug` 不做 R8，debug 包里仍能看到 v2 代码。
 
 ## 15. 为什么不用 Hilt / Room / Coil
 

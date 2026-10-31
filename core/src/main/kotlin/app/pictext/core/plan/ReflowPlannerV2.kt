@@ -365,3 +365,28 @@ internal class ReflowPlannerV2(private val cutPolicy: CutPolicy = CutPolicy()) {
     }
 }
 
+/**
+ * v2（模型版面）的规划入口，**只给 `SmartReflow` / CLI 用**。
+ *
+ * v1 的 [ReflowPlanner] 不引用本函数，也不引用 [ReflowPlannerV2]；App 侧
+ * （release：R8 + 无 keep 规则）因此会把这一整条 v2 链路剥掉。
+ * 门禁：`scripts/verify-v1-only.ps1` 扫描 `classes.dex` 里的 v2 专有字符串。
+ */
+internal fun planDocLayout(
+    layout: PageLayout,
+    options: ReflowOptions,
+    stats: LayoutSummaryStats? = null,
+): ReflowPlan {
+    val geometry = PlanGeometry.of(options)
+    return ReflowPlannerV2().plan(
+        layout = layout,
+        options = options,
+        outW = geometry.outW,
+        inset = geometry.inset,
+        contentW = geometry.contentW,
+        notes = layout.diagnostics.notes.toMutableList(),
+        stats = stats,
+    )
+}
+
+

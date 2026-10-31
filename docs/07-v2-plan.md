@@ -1,5 +1,10 @@
 # 07 · V2 计划：版面识别 + 阅读顺序重排
 
+> **当前状态（0.5.1）：v2 不发布。** App 只跑 v1；v2 的代码留在 `:core` / `:cli` 做技术验证，
+> 不进入发行包。v1 的规划器**不引用** v2（分流在 `SmartReflow`，只有 CLI 用），
+> `scripts/verify-v1-only.ps1` 对 release 的 `classes.dex` / R8 `mapping.txt` 做机检门禁，
+> 见 [03 §14.2](03-architecture.md)。本文其余章节是 v2 的设计与实施记录，**不代表发行版行为**。
+
 > 目标：把 v1 的“按行左右对半切”升级为“先识别版面区域，再按阅读顺序排成单列”。
 > 依据：需求截图（A–L 流程）、PP-DocLayout-S 官方模型卡/文档（23 类、4.834MB、mAP 70.9、Apache-2.0）、
 > `testdata/private/samples*` 的 18 张真实截图、

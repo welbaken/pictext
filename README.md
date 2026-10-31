@@ -118,13 +118,20 @@ v2（可选）：ONNX Runtime + PP-DocLayout-S（官方 4.834MB / 23 类 / 模�
 需要 JDK 17 与 Android SDK 35（`local.properties` 里的 `sdk.dir` 指向 SDK 根目录）。
 
 ```bash
-./gradlew :core:test                 # 算法单测 + 黄金图对拍
+./gradlew :core:test                 # 算法单测 + 黄金图对拍（有真实样例时连带全量回归）
+./gradlew :core:longPageMemoryTest   # 长图内存回归：1080×20000 在 -Xmx96m 下分析
 ./gradlew :cli:run --args="prototype/out/source.png out --out-width 1080"
 ./gradlew :app:assembleDebug         # 产出 app/build/outputs/apk/debug/app-debug.apk
-./gradlew :app:assembleRelease       # R8 + 资源压缩；v1 < 8MB，v2 体积以实测为准（不设硬上限）
+./gradlew :app:assembleRelease       # R8 + 资源压缩；v1 < 8MB
 ```
 
+**发行版 v1-only 门禁**：`scripts\verify-v1-only.ps1` 会构建 release 并断言产物里没有 v2
+逻辑——`classes.dex` 不得出现 v2 专有常量，R8 `mapping.txt` 不得出现 v2 业务类
+（`LayoutPipeline` / `CutPolicy` / `ReflowPlannerV2` …）。v2 只在 `:core` / `:cli` 做技术验证，
+App 侧无需任何开关。见 [03 §14.2](docs/03-architecture.md)。
+
 Windows 下可用 `scripts\verify.ps1` 一次跑完单测与 debug 构建；
+`scripts\verify-v1-only.ps1` 单独跑发行版门禁（`-SkipBuild` 只检查现有产物）；
 `scripts\test-samples.ps1` 会用 `testdata/private/samples/`（缺失时回退 `testdata/samples/`）的真实截图跑 CLI，
 结果写到 `testdata/out/`（样例缺失时自动跳过）；
 `scripts\score-samples.ps1` 批量跑 `testdata/private/samples2/`（或 `testdata/samples2/`）的 18 张样例并生成 `testdata/scoreboard.md`

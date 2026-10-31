@@ -10,7 +10,7 @@ import app.pictext.core.model.RegionKind
 import app.pictext.core.model.RenderItem
 import app.pictext.core.model.TextLine
 import app.pictext.core.plan.ReflowOptions
-import app.pictext.core.plan.ReflowPlanner
+import app.pictext.core.plan.planDocLayout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -126,7 +126,7 @@ class PageComposerTest {
             id = 2, kind = RegionKind.FIGURE, order = 2, bounds = RectI(40, 240, 400, 440),
         )
         val layout = composer.compose(page, listOf(title, body, fig), CoverageReport.EMPTY)
-        val plan = ReflowPlanner().plan(layout, ReflowOptions(outputWidth = 1080))
+        val plan = planDocLayout(layout, ReflowOptions(outputWidth = 1080))
 
         assertEquals(LayoutStrategy.DOC_LAYOUT, plan.strategy)
         val texts = plan.items.filterIsInstance<RenderItem.TextRow>()

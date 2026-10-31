@@ -88,9 +88,10 @@ MSER 真正的价值在"版面复杂、背景不干净"的图片上。而我们�
 | 效果 | 切点必须落在字缝里：要么 100% 干净，要么整页不切 | 原型同款判定（`line_gap`） |
 | 效果 | 真机 20 张真实截图，主观"愿意读完"≥ 80% | 人工清单 |
 | 速度 | 1080×2400 图片：分析 < 120ms，首屏 < 500ms | Macrobenchmark / 手测 |
-| 内存 | 峰值 < 120MB，无 OOM | Profiler，含 1080×20000 长图 |
-| 稳定 | 失败必降级为"看原图"，不允许白屏/崩溃 | 仪器测试 + 混沌输入 |
-| 体积 | release APK < 8MB（v1 口径；v2 不设硬上限，见 [07](07-v2-plan.md)） | `assembleRelease` |
+| 内存 | 峰值 < 120MB，无 OOM | `:core:longPageMemoryTest`（1080×20000 @96MB）+ 真机 Profiler |
+| 稳定 | 失败必降级为"看原图"，不允许白屏/崩溃 | 混沌输入 + 真机手测（`:app` 仪器测试待建） |
+| 体积 | release APK < 8MB | `assembleRelease`（当前 1.18MB） |
+| 剥离 | release 产物**不含 v2 逻辑**：`classes.dex` 无 v2 常量、R8 mapping 无 v2 业务类 | `scripts/verify-v1-only.ps1` |
 
 ## 6. 收益公式（决定"要不要切"）
 

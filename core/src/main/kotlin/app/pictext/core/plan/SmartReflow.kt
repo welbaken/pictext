@@ -83,7 +83,9 @@ class SmartReflow(
                 originalResult(page, outcome.code).copy(v2Outcome = outcome)
 
             is LayoutOutcome.Success -> {
-                val plan = ReflowPlanner().plan(outcome.layout, planOptions, outcome.summary)
+                // v1/v2 的分流在这里（而不是在 ReflowPlanner 里）：App 侧永远走 v1，
+                // 于是 release 包可以把 ReflowPlannerV2 + CutPolicy 整条剥掉。
+                val plan = planDocLayout(outcome.layout, planOptions, outcome.summary)
                 if (plan.fallback == FallbackReason.LAYOUT_FALLBACK) {
                     val code = plan.notes.lastOrNull { it.startsWith("layout_") } ?: "layout_plan_failed"
                     originalResult(page, code, plan.notes).copy(v2Outcome = outcome)

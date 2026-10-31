@@ -6,18 +6,20 @@
 
 ```mermaid
 flowchart BT
-    A[真机验收<br/>20 张真实截图] --> B[仪器测试<br/>分享/旋转/回退/多图]
-    B --> C[黄金测试<br/>8 张合成图端到端]
+    A[真机验收<br/>20 张真实截图] --> B[真实图回归<br/>testdata/samples 全量不变量]
+    B --> C[黄金测试<br/>3 张合成图端到端]
     C --> D[单元测试<br/>每个 Step 的边界条件]
 ```
 
 下层不过，上层不测。
 
-| 层 | 数量目标 | 运行时间 | 何时跑 |
+| 层 | 现状 | 运行时间 | 何时跑 |
 |---|---|---|---|
-| 单元（`:core:test`） | 60+ | < 5s | 每个 PR |
-| 黄金 | 8 fixture × 1 | < 10s | 每个 PR |
-| 仪器（`:app:connectedDebugAndroidTest`） | 12+ | < 3min | 每日 / 合并前 |
+| 单元（`:core:test`） | 269 个用例（v1 约 121，v2 约 148） | < 30s | 每个 PR |
+| 长图内存（`:core:longPageMemoryTest`） | 1 个用例：1080×20000 在 `-Xmx96m` 下分析 | ~2s | 每个 PR（`check` 已挂） |
+| 黄金（GoldenTest） | 3 fixture（main / dark / photo） | < 2s | 每个 PR |
+| 真实图回归（RealImageRegressionTest） | 目录存在时**全量必须过**；CI 无样例时整类跳过 | 20–60s | 有本地样例时每个 PR |
+| 仪器（`:app:connectedDebugAndroidTest`） | **0（尚未建立，见 §2d）** | — | — |
 | 真机人工 | 20 张 | 1 小时 | 每个里程碑 |
 
 ## 2. 单元测试清单（core）
@@ -56,18 +58,36 @@ fun `深色图块不会被当成背景`() {
 ## 2b. 真实图片回归（v1.1）
 
 `core/src/test/.../RealImageRegressionTest.kt` 直接读 `testdata/private/samples/`（或
-`testdata/samples/`，用 Gradle 传 `-Dpictext.root=<仓库根>`，不复制图片），对 4 张样例断言**结构区间**而不是像素：
+`testdata/samples/`，用 Gradle 传 `-Dpictext.root=<仓库根>`，不复制图片），**语料驱动**而不是点名 4 张图：
 
-| 样例 | 断言 |
+| 用例 | 断言 |
 |---|---|
-| twitter | 0 个 FIGURE；`REFLOW`；scale > 2.2；BODY 行 ≥ 10；UI/CAPTION 行 `split=false`；每个 BODY item 的缩放与 `bodyScale` 偏差 ≤ 5%；审计 ok |
-| news_jp | 1 个 FIGURE；`REFLOW`；≥1 个 HEADING、≥1 个 CAPTION；标题输出字高 ≥ 正文；审计 ok |
-| xerj | 不允许 1.0–1.25× 伪重排：要么 `ORIGINAL`，要么 `gain ≥ 1.5` 且审计 ok |
-| arknights | 固定 `ORIGINAL`、无渲染项、不崩溃 |
+| `every sample satisfies plan invariants` | 目录里每一张：分析 < 1500ms；`src` 在源图内且非空；`dest` 在列宽内且非空；非 `ORIGINAL` ⇒ 有渲染项；非 `ORIGINAL` ⇒ `PlanAuditor` 必须 ok；整个语料至少有一张真的重排了 |
+| `x4 never overflows and yields more rows than x2` | 对 ×2 真的重排过的页：×4 仍 `REFLOW`、`scale` 不减小、行数不减少、每段不溢出色宽、同一 `src.top` 不超过 4 段；语料里至少一页切出 3 段以上（防止二次重排整体失效） |
+| `ten thousand pixel long image falls back` | 690×10305 长图：`ORIGINAL` + `gain<1.25` + `analysisScale=1` + 行数 > 150 |
 
-样例缺失时用 JUnit `assumeTrue` 跳过（CI 未带真实截图也不会红）；真实截图因版权/隐私原因
-不随仓库分发，放到 `testdata/private/samples/` 即可被自动发现。每次运行都会打印一行
-`sample=… lines=… figures=… roles=… audit=[…]`，可直接贴进报告。
+**目录级跳过、单文件不允许跳过**：目录不存在时整类 `assumeTrue`（CI 没样例不该红）；
+目录存在时任何一张违反不变量都算失败。早期版本按名字找 `twitter/news_jp/xerj/arknights`，
+样板改名后 6/7 个用例都在静默跳过，这条安全网实际等于不存在——不要再退回那个写法。
+
+`ImageIO` 读不了的格式（当前 JDK 没有 webp 插件）只打印并计入跳过，不算失败；真机走
+`BitmapFactory`，格式支持面更宽。每次运行都会打印一行
+`sample=… lines=… figures=… roles=… audit=[…]` 和汇总 `samples: 重排 N / M`，可直接贴进报告。
+
+## 2b-2. 渲染几何（core 侧，纯函数）
+
+渲染链路里最容易错的是坐标换算。其中与 Android 无关的那部分已经在 `:core` 且**有测试**
+（`RenderPlanGeometryTest`）：
+
+| 主题 | 位置 | 断言 |
+|---|---|---|
+| 瓦片命中 | `ReflowPlan.itemsIntersecting` | 与线性扫描结果一致（200 个随机瓦片）；`dest.top` 二分依赖的单调假设；边界开闭 |
+| 图块点按 | `ReflowPlan.figureAt` | 右下开区间；文字行不参与；真实计划里能命中 |
+| 瓦片高度 | `ReflowPlan.tileHeight` / `tileCount` | 最后一瓦片余数；`height=0` 的边界 |
+
+**尚未覆盖**：`TileRenderer`（`drawBitmap` 跨条带切分）、`SourceStripCache`（`sample` 选择 /
+LRU 回收）、`BitmapDecoder`（EXIF / 条带解码）——这些需要 Android 位图，属于 §4 的仪器测试缺口。
+`Strip.toBitmapRect` 的映射算式目前留在 `:app`，要测它得先抽成纯函数（暂未做）。
 
 ## 2c. HTML 版面夹具与 DOM 真值（v2）
 
@@ -140,14 +160,17 @@ fun `深色图块不会被当成背景`() {
 
 禁止为了让红变绿直接 `--update-golden`。
 
-## 4. 仪器测试
+## 4. 仪器测试（__当前为 0，缺口__）
+
+`:app` 目前**没有 `androidTest` / `test` 源集**（`app/src` 下只有 `main`），`app/build.gradle.kts`
+也没有测试依赖。下表是**应该建**的清单，不是现状：
 
 | 用例 | 步骤 | 断言 |
 |---|---|---|
 | `shareSingleImage` | 用 `Intent.ACTION_SEND` + `FileProvider` URI 启动 | 10s 内出现重排内容 |
 | `shareMultiple` | 3 个 URI | 页码 1/3，可滑到第 3 页 |
-| `shareInvalidUri` | 不存在的 URI | 错误页，返回键可用，无崩溃 |
-| `rotationKeepsState` | 阅读中旋转 | 不重新分析，滚动位置保持 |
+| `shareInvalidUri` | 不存在的 URI | 错误页，返回键可用，无崩溃；**按“重试”能重走 open** |
+| `rotationKeepsState` | 阅读中旋转 | 不重新分析，滚动位置保持，计划不因旋转而变成强制重排 |
 | `processDeath` | `ActivityScenario.recreate()` | 恢复到同一页 |
 | `fallbackNoText` | 注入 `no_text` fixture | 原图模式 + 提示文案 |
 | `backFromViewer` | 返回 | 回到来源 App（`finish()`） |
@@ -157,6 +180,10 @@ fun `深色图块不会被当成背景`() {
 | `noInternetPermission` | 读合并后的 manifest | 不包含 `INTERNET` |
 
 `shareSingleImage` 需要把测试图放 `androidTest/assets/`，用 `FileProvider` 暴露给自身。
+
+> 缺口说明：`TileRenderer` / `SourceStripCache` / `BitmapDecoder`（含 EXIF）/ 手势 / 状态机
+> 现在完全没有自动化覆盖，只能靠真机人工。任何"渲染/解码"改动都要在真机上按 §6、§11 走一遍；
+> 建 `:app` 测试是下一优先级（Robolectric 或 `androidTest` 二选一，前者不需要设备）。
 
 ## 5. 性能基准
 
@@ -275,11 +302,12 @@ powershell -ExecutionPolicy Bypass -File scripts/score-samples.ps1 -SkipRun
 发布前检查：
 
 - [ ] S0 / S1 清零
-- [ ] `:core:test` 全绿，黄金基线已 review
-- [ ] 仪器测试全绿
+- [ ] `:core:test` 全绿（含真实图回归；本地样例目录存在时不允许跳过）
+- [ ] `scripts/verify-v1-only.ps1` PASS（release 产物无 v2 逻辑，见 [03 §14.2](03-architecture.md)）
+- [ ] 仪器测试全绿 —— **暂无**（`:app` 无测试源集，见 §4；在补齐前只能靠真机人工验收）
 - [ ] 20 张验收 ≥ 16 可用，无内容丢失
 - [ ] 性能指标达标（第 5 节）
-- [ ] APK < 8MB
+- [ ] APK < 8MB（当前 1.19MB）
 - [ ] 清单无 INTERNET / 存储权限
 - [ ] 关于页隐私声明存在
 
@@ -288,10 +316,12 @@ powershell -ExecutionPolicy Bypass -File scripts/score-samples.ps1 -SkipRun
 | 改动 | 必跑 |
 |---|---|
 | 任意 `core` 改动 | `:core:test` + 黄金 + CLI 出图肉眼对比 |
-| 解码 / 条带 | 仪器：分享、旋转、大图；内存 |
-| 渲染 / UI | 仪器：滚动、切换、旋转；掉帧 |
-| 设置 / 存储 | 仪器：进程死亡、重启 |
-| 依赖 / 构建 | `assembleRelease`，检查 APK 体积与清单 |
+| 条带 / 分析内存 | `:core:longPageMemoryTest`（96MB 堆下 1080×20000） |
+| 规划 / 审计 | `:core:test`（`PlanAuditor` 已含 k≠1 的坐标空间用例） |
+| 解码 / 条带 | 真机：分享、旋转、大图；内存（`:app` 无仪器测试） |
+| 渲染 / UI | 真机：滚动、切换、旋转；掉帧（`:app` 无仪器测试） |
+| 设置 / 存储 | 真机：进程死亡、重启 |
+| 依赖 / 构建 | `scripts/verify-v1-only.ps1`（含 `assembleRelease`），检查 APK 体积与清单 |
 
 ## 11. 手工验收脚本（每次里程碑）
 

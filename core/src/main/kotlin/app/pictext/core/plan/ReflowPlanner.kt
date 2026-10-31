@@ -1,6 +1,5 @@
 package app.pictext.core.plan
 
-import app.pictext.core.layout.LayoutSummaryStats
 import app.pictext.core.model.Block
 import app.pictext.core.model.FallbackReason
 import app.pictext.core.model.FigureKind
@@ -39,22 +38,24 @@ import kotlin.math.roundToInt
 class ReflowPlanner {
 
     /**
-     * @param layoutStats v2 管线的统计（tile 数/覆盖率/残差等）。v1 调用方传 `null`；
-     *   v2 下这些数字会进 `ReflowPlan.layout`，供 CLI 与审计读取。
+     * v1（全页投影链路）的规划入口。
+     *
+     * **这里刻意不引用 v2**：v1/v2 的分流放在 `SmartReflow`（只有 CLI 用）。否则 App 的
+     * release 包里会一直拖着 `ReflowPlannerV2` + `CutPolicy`——它们正是 R8 唯一剥不掉的
+     * v2 逻辑。现在 release 里只剩 v2 的**数据类型**（v1 模型字段引用），没有任何 v2 代码路径，
+     * 由 `scripts/verify-v1-only.ps1` 对 `classes.dex` 做门禁。
      */
-    fun plan(
-        layout: PageLayout,
-        options: ReflowOptions,
-        layoutStats: LayoutSummaryStats? = null,
-    ): ReflowPlan {
-        val outW = options.outputWidth.coerceAtLeast(1)
-        val inset = max(10, (options.insetRatio * outW).roundToInt())
-        val contentW = max(1, outW - 2 * inset)
+    fun plan(layout: PageLayout, options: ReflowOptions): ReflowPlan {
+        val geometry = PlanGeometry.of(options)
+        val outW = geometry.outW
+        val inset = geometry.inset
+        val contentW = geometry.contentW
 
         val notes = layout.diagnostics.notes.toMutableList()
-        // v2（模型区域 + 阅读顺序）走独立分支：v1 的“全页投影 + 左右对半”一行都不动。
-        if (layout.strategy == LayoutStrategy.DOC_LAYOUT) {
-            return ReflowPlannerV2().plan(layout, options, outW, inset, contentW, notes, layoutStats)
+        // 防御：v1 规划器不认识 v2 版面（区域/阅读顺序在 `regions` 里，`blocks` 可能是空的）。
+        // 正常调用不会走到这里（分流在 SmartReflow），真走到了也按“看原图”降级，不崩。
+        if (layout.strategy != LayoutStrategy.PROJECTION) {
+            return originalPlan(layout, outW, FallbackReason.LAYOUT_FALLBACK, notes)
         }
         // 用户明确按了“×2/×4”时只保留“根本没字/没墨”这类硬回退，
         // 长行不足、收益不足、多栏这些前置判断一律不看（他要的是放大，不是建议）。
