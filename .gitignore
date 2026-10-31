@@ -32,3 +32,6 @@ tools/.venv-doclayout/
 __pycache__/
 *.pyc
 
+
+# 交付产物（APK/测试签名/说明），本地生成不入库
+dist/
