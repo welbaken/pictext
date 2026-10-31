@@ -70,6 +70,44 @@ class RegionRefiner(
         ).clampTo(page.srcWidth, page.srcHeight)
         if (crop.isEmpty) return failed(region)
 
+        val first = refineWithin(sampler, page, region, crop)
+        if (first.failed) return first
+
+        // 1.5 行带贴住 ROI 左右边界时，向外再吃一截（V2-49）。
+        //
+        // 模型框在标题上常比实际文本窄几个像素，外扩 [LayoutOptions.refinePadPx] 也不一定够：
+        // 690px 宽截图上「Pro 20x 200美元套餐」的模型框右边界是 527，文本墨迹一直到 537，
+        // 外扩 6px 后 ROI 仍在 533 把字形切断。行带只要贴住 ROI 边界，就说明“这里不是墨迹的
+        // 真实终点”，把 ROI 按行高的一半（最多 [EDGE_GROW_MAX_PX]）再扩一次重切。
+        // 不扩上下边：上下相邻的是别的段落，横向相邻的通常只是同一个字的残余笔画。
+        val touchLeft = first.lines.any { it.band.left <= crop.left }
+        val touchRight = first.lines.any { it.band.right >= crop.right }
+        if (touchLeft || touchRight) {
+            val grow = maxOf(
+                (0.5f * first.medianLineHeight).roundToInt(),
+                options.refinePadPx.coerceAtLeast(1),
+            ).coerceAtMost(EDGE_GROW_MAX_PX)
+            val expanded = RectI(
+                if (touchLeft) crop.left - grow else crop.left,
+                crop.top,
+                if (touchRight) crop.right + grow else crop.right,
+                crop.bottom,
+            ).clampTo(page.srcWidth, page.srcHeight)
+            if (expanded != crop) {
+                val second = refineWithin(sampler, page, region, expanded)
+                if (!second.failed) return second
+            }
+        }
+        return first
+    }
+
+    /** 在一个已经确定好的 ROI 内细化；[refine] 负责 ROI 的外扩重试。 */
+    private fun refineWithin(
+        sampler: RegionSampler,
+        page: PageContext,
+        region: LayoutRegion,
+        crop: RectI,
+    ): RefineResult {
         // 2. 直接从源图采样；scale 是“采样列 / 源列”，允许 < 1。
         val img = sampler.gray(crop, options.refineMaxWidth, options.refineMaxPixels)
         val w = img.gray.width
@@ -405,4 +443,9 @@ class RegionRefiner(
         failed = true,
         lines = emptyList(),
     )
+
+    private companion object {
+        /** 行带贴边时 ROI 最多再向外扩多少像素（防止跨过栏间距吃进相邻列）。 */
+        const val EDGE_GROW_MAX_PX = 32
+    }
 }

@@ -141,6 +141,33 @@ class RegionRefinerTest {
         assertTrue("纹理不应被当成文字行：failed=${result.failed}", result.failed || result.lineCount == 0)
     }
 
+    @Test
+    fun `line touching the roi edge grows outward to the glyph`() {
+        val page = whitePage(1080, 400)
+        // 文本实际到 540，模型框右边界 527（+6 pad = 533）会切掉最后 7px。
+        page.paint(100, 100, 540, 124, 0)
+
+        val result = refine(page, RectI(60, 70, 527, 154))
+
+        assertFalse(result.failed)
+        val band = result.lines.single().band
+        assertTrue("行带右缘=${band.right}，应吃到 540 附近", band.right >= 538)
+        assertTrue("行带左缘=${band.left}", abs(band.left - 100) <= 1)
+    }
+
+    @Test
+    fun `line not touching the roi edge is not grown`() {
+        val page = whitePage(1080, 400)
+        page.paint(100, 100, 540, 124, 0)
+
+        // ROI 右边留了 60px，行带不贴边，不应触发外扩。
+        val result = refine(page, RectI(60, 70, 600, 154))
+
+        assertFalse(result.failed)
+        val band = result.lines.single().band
+        assertTrue("行带右缘=${band.right}", abs(band.right - 540) <= 1)
+    }
+
     // ---------------------------------------------------------------------
     // 6. 切点特征
     // ---------------------------------------------------------------------

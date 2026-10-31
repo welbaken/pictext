@@ -1626,6 +1626,7 @@ testdata/report-v2.md                  # 批量对比
 | V2-32 | `app/.../layout/{ModelAssets,OrtLayoutDetector,AndroidTileSampler}.kt`、`AppContainer`、`SettingsRepository.smartLayout`（β 开关在顶栏）、`ViewerViewModel` 走 `SmartReflow` | MuMu（Android 15 / 1440×2560 / x86_64）实测：模型从 assets 装到 filesDir、ORT 双输入会话就绪、`strategy=DOC_LAYOUT`、`coverage=1.000`、`auditV2=true`、页面正常重排 |
 | V2-43 | `core/.../plan/TrustGate.kt`、`LayoutPipeline` 的四个信任度信号、`SmartReflow` 两段式复核 | 聊天夹具（文字被框成图片）**回退 v1**：`layout_text_as_figure`；42 张真实样例 **零误伤**（v2 31→30 全部来自夹具）；正常页零成本（文字面积 ≥0.20 不复核） |
 | V2-48 | `core/.../layout/RegionDeduper.kt`、`LayoutPipeline` 在补区后调用 | 690×1533 深色页的重复 src **17 组 → 0**；42 张批量 `dupSrc=0`、`itemsDropped=0`；`:core:test` 新增 7 个去重用例 |
+| V2-49 | RegionRefiner 的“行带贴边 → ROI 再外扩” | 同一张图标题第二行右缘 533 → 538（实际墨迹 537），仍是 DOC_LAYOUT、auditV2=ok |
 
 ### 13.1.1 检测基线摘要（详见 `testdata/layout/detection-baseline.md`）
 
@@ -1877,6 +1878,22 @@ v2 的文字行从 7 降到 2，于是 V2-43 可信度闸门按设计回退 v1�
 **为什么不直接改 NMS 阈值**：残差重复与模型框 IoU 无关，改阈值只会让“框略有偏移的
 真实相邻行”更容易被误抑制；行带级去重能同时覆盖模型框与残差两条来源，而且判据是
 “同一物理行”的几何，不依赖分数排序。
+
+### 13.6.4 V2-49：标题行带贴住 ROI 边界时右侧缺一截（已修，2026-10-31）
+
+同一张图的标题第二行 `Pro 20x 200美元套餐` 实际墨迹到 x=537，模型框右边界 527，
+`refinePadPx=6` 后 ROI 到 533，行带就被切在 533（放大 3× 后右边约 12px 被裁）。
+
+**修法**（`RegionRefiner`）：行带只要贴住 ROI 左/右边界，说明“这里不是墨迹的真实终点”，
+把 ROI 按 `0.5×行高`（最多 32px）向外再扩一次重切；只扩左右，不扩上下（上下相邻的是
+别的段落，横向相邻的通常只是同一字形的残余笔画）。扩一次仍贴边就接受，避免跨过栏间距
+吃进相邻列。
+
+**实测**：标题第二行行带 `18,291,533,344 → 18,291,538,344`，渲染后“套餐”完整；
+仍是 `DOC_LAYOUT`、`coverage=1.000`、`auditV2=ok`。回归用例：
+`line touching the roi edge grows outward to the glyph` /
+`line not touching the roi edge is not grown`。
+
 
 ### 13.7 V2-13 闸门结论（2026-10-30）
 
