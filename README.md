@@ -4,8 +4,8 @@
 > v1 不 OCR、不联网、不上模型，纯端侧传统图像处理。v2（约 4.8MB 版面模型）只作为
 > 技术验证留在 `:core` / `:cli`，**0.5 安装包不包含 v2**。
 
-**最新安装包**：[v0.5.2 发行版](https://gitee.com/noneoneone/pictext/releases/latest)
-（`pictext-0.5.2-v1.apk` · 1.18 MiB · versionCode 8 · minSdk 26 · 无 INTERNET/存储权限）。
+**最新安装包**：[v0.5.3 发行版](https://gitee.com/noneoneone/pictext/releases/latest)
+（`pictext-0.5.3-v1.apk` · 1.18 MiB · versionCode 9 · minSdk 26 · 无 INTERNET/存储权限）。
 
 ![重排前后对比](docs/assets/compare.png)
 

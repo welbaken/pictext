@@ -1,6 +1,6 @@
 # 07 · V2 计划：版面识别 + 阅读顺序重排
 
-> **当前状态（0.5.2）：v2 不发布。** App 只跑 v1；v2 的代码留在 `:core` / `:cli` 做技术验证，
+> **当前状态（0.5.3）：v2 不发布。** App 只跑 v1；v2 的代码留在 `:core` / `:cli` 做技术验证，
 > 不进入发行包。v1 的规划器**不引用** v2（分流在 `SmartReflow`，只有 CLI 用），
 > `scripts/verify-v1-only.ps1` 对 release 的 `classes.dex` / R8 `mapping.txt` 做机检门禁，
 > 见 [03 §14.2](03-architecture.md)。本文其余章节是 v2 的设计与实施记录，**不代表发行版行为**。
@@ -10,7 +10,7 @@
 > `testdata/private/samples*` 的 18 张真实截图、
 > 以及当前 `core/`（`RowSegmenter → RowClassifier → ColumnSplitter → ReflowPlanner`）的代码基线。
 > 范围：v2.0。仍然不做 OCR、不做语义理解、不联网；所有像素原样搬运。
-> 状态：**已停止接入产品（0.5.2）**。M0 已完成：官方模型契约已核对、ONNX 已产出并与官方 Paddle 对拍
+> 状态：**已停止接入产品（0.5.3）**。M0 已完成：官方模型契约已核对、ONNX 已产出并与官方 Paddle 对拍
 > ≤0.01px；`core/layout` 的检测后处理 / tile 网格 / 区域合并 / 细化 / 覆盖审计 / 阅读顺序 / 切点 / 规划 / 审计
 > 已实现并带单测。**V2-32（App 接线）与 V2-51（顶栏「强化重排」）已成为历史**：V2-52 决定 0.5 只发 v1，
 > v2 留在 `:core`/`:cli` 做技术验证，release 产物由 `scripts/verify-v1-only.ps1` 机检门禁。

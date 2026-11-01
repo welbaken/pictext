@@ -41,9 +41,12 @@ android {
         // 0.5.1（code 7）修长图：分析图宽度优先 + gain 换算回源图 + 超长图条带分析。
         // 0.5.2（code 8）修交互与内存：强制档语义、失败可重试、审计坐标空间、
         // 条带内存（峰值 ~124MB → 54MB）、渲染失败留痕、位图晚一帧回收、v1.3 带内竖切。
-        // versionCode 6 从上一版 2.0.0-beta1/0.5.0-full（code 5）升级；0.5.1 +1、0.5.2 +1。
-        versionCode = 8
-        versionName = "0.5.2"
+        // 0.5.3（code 9）版式与手势：图注也参与切分（仍压在 0.9×bodyScale）、
+        // 双指缩放改为纯视觉放大（1×–3×，不重新规划），重排倍率只由底栏 ×2/×4 决定；
+        // 放大后单指拖动为平移（横向移 panX、纵向 dispatchRawDelta）。
+        // versionCode 6 从上一版 2.0.0-beta1/0.5.0-full（code 5）升级；0.5.1 +1、0.5.2 +1、0.5.3 +1。
+        versionCode = 9
+        versionName = "0.5.3"
     }
 
     buildFeatures {
