@@ -76,7 +76,14 @@ class RowSegmenter(private val options: AnalysisOptions = AnalysisOptions()) {
         val maxGap = max(2, (options.rowMergeGapRatio * medH).toInt())
         val maxHeight = max(2, (options.rowMergeHeightRatio * medH).toInt())
         val merged = mergeWithHeightCap(raw, maxGap, maxHeight)
-        val kept = merged.filter { (it.last - it.first + 1) >= options.rowMinHeightRatio * medH }
+        // 过矮的带不算“一行”：图标按钮的上/下边框、分隔线、抗锯齿残渣都会单独成带。
+        // 基准取**合并后**高度的 60 分位，而不是中位数：一页里只要混进几条细带，
+        // 中位数就会被拉低（4 条带里 2 条细带，中位数直接落在两者中间），
+        // 而 60 分位仍然落在真实行高上。实测 690×1708 与 699×1730 只差 1.3% 缩放时，
+        // 这两条 5px 假行的有无会把整页计划带偏（lines 38→40、段落 7→8）。
+        val mergedTypicalH = typicalHeight(IntArray(merged.size) { merged[it].last - merged[it].first + 1 })
+        val minBandHeight = options.rowMinHeightRatio * max(medH, mergedTypicalH)
+        val kept = merged.filter { (it.last - it.first + 1) >= minBandHeight }
         if (kept.isEmpty()) return RowSegmentResult(emptyList(), 0f, decoration, content)
 
         val keptHeights = IntArray(kept.size) { kept[it].last - kept[it].first + 1 }
@@ -159,7 +166,13 @@ class RowSegmenter(private val options: AnalysisOptions = AnalysisOptions()) {
         val maxGap = max(2, (options.rowMergeGapRatio * ref).toInt())
         val maxHeight = max(2, (options.rowMergeHeightRatio * ref).toInt())
         val merged = mergeWithHeightCap(raw, maxGap, maxHeight)
-        val kept = merged.filter { (it.last - it.first + 1) >= options.rowMinHeightRatio * ref }
+        // 过滤基准：正常页用**整页**行高（子区里可能只有两条 5px 边框 + 一行字，自己的中位数
+        // 会塌到 5，0.35×5 谁都拦不住——699×1730 就是这样多出两条假行）；
+        // 退化页（整页中位数就是这条带的高度，比如“一张大图 + 右侧两行字”）只能退回 [ref]，
+        // 否则整页行高把真正的两行字也拦掉，图块就分不出来了。
+        val degenerate = medianHeight <= 0f || medianHeight >= rows * 0.9f
+        val minBandHeight = options.rowMinHeightRatio * (if (degenerate) ref else medianHeight)
+        val kept = merged.filter { (it.last - it.first + 1) >= minBandHeight }
         if (kept.isEmpty()) return emptyList()
 
         val out = ArrayList<RowBand>(kept.size)
@@ -208,6 +221,19 @@ class RowSegmenter(private val options: AnalysisOptions = AnalysisOptions()) {
             for (x in 0 until width) if (decoration[x]) out[base + x] = false
         }
         return out
+    }
+
+    /**
+     * 行带高度的“典型值”：排序后取 60 分位。
+     *
+     * 用中位数的话，两三条细带（图标边框、分隔线）就能把基准拉到它们自己的高度上，
+     * `0.35 × 基准` 随之失效；60 分位仍然落在真实行高那一档。
+     */
+    internal fun typicalHeight(heights: IntArray): Float {
+        if (heights.isEmpty()) return 0f
+        val sorted = heights.copyOf()
+        sorted.sort()
+        return sorted[(sorted.size * 0.6f).toInt().coerceIn(0, sorted.size - 1)].toFloat()
     }
 
     /**

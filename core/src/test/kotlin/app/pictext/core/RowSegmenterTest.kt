@@ -69,4 +69,45 @@ class RowSegmenterTest {
         val r = segmenter.segment(mask, w, h)
         assertEquals(1, r.bands.size)
     }
+
+    /**
+     * 图标按钮的上/下边框（2px）夹在正文行之间，不能各算一行。
+     *
+     * 真实样例（699×1730 的微信转发图）就是在右上角那排图标上多出两条 5px 带，
+     * 被判成 CAPTION，把整页计划带偏：lines 38→40、items 61→63、段落 7→8。
+     */
+    @Test
+    fun `slivers much thinner than a line are not bands`() {
+        val w = 200
+        val h = 140
+        val mask = maskFromRects(
+            w, h,
+            RectI(10, 20, 190, 35),      // 15px 正文行
+            RectI(60, 50, 140, 52),      // 2px 细带
+            RectI(60, 80, 140, 82),      // 2px 细带
+            RectI(10, 110, 190, 125),    // 15px 正文行
+        )
+        val bands = segmenter.segment(mask, w, h).bands
+        assertEquals(2, bands.size)
+        assertTrue(bands.all { it.height >= 10 })
+    }
+
+    /**
+     * 子区（图文并排的左/右半边）里，过矮的带同样要按**整页**行高拦掉：
+     * 子区只有两三条细带时，它自己的行高中位数会塌到细带的高度，0.35×它谁都拦不住。
+     */
+    @Test
+    fun `region drops slivers using the page line height`() {
+        val w = 200
+        val h = 140
+        val mask = maskFromRects(
+            w, h,
+            RectI(10, 30, 190, 45),      // 15px 正文行
+            RectI(60, 60, 140, 62),      // 2px 细带
+            RectI(60, 90, 140, 92),      // 2px 细带
+        )
+        val bands = segmenter.segmentRegion(mask, w, 0, w, 0, h, medianHeight = 15f)
+        assertEquals(1, bands.size)
+        assertTrue(bands[0].height in 14..17)
+    }
 }
