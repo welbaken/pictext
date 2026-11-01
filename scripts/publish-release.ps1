@@ -34,7 +34,9 @@ try {
     $apkFile = Get-Item $Apk -ErrorAction SilentlyContinue
     if (-not $apkFile) { throw "找不到安装包：$Apk（先跑 :app:assembleRelease 再拷到 dist/）" }
     $notesFile = Get-Item $Notes -ErrorAction SilentlyContinue
-    $body = if ($notesFile) { Get-Content $notesFile.FullName -Raw } else { "版本 $Version" }
+    # 必须显式 -Encoding UTF8：Windows PowerShell 5.1 的 Get-Content 默认按 ANSI(GBK) 读，
+    # 中文说明会被读成乱码再原样发到 Gitee 上（0.5.3 首版就踩了）。
+    $body = if ($notesFile) { Get-Content $notesFile.FullName -Raw -Encoding UTF8 } else { "版本 $Version" }
     $title = "图读 PicText $Version（v1-only）"
 
     $sha = (Get-FileHash $apkFile.FullName -Algorithm SHA256).Hash.ToLower()
@@ -64,17 +66,16 @@ try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     $base = "https://gitee.com/api/v5/repos/$Owner/$Repo"
 
-    # ---- 建 release；已存在就复用（Gitee 的 tags 端点不可靠，直接翻列表匹配）----
+    # ---- 建 release；已存在就复用并更新说明（Gitee 的 tags 端点不可靠，直接翻列表匹配）----
+    # 表单值一律自己按 UTF-8 百分号编码：PS 5.1 对哈希表 body 的编码不可控，中文会变问号/乱码。
+    $enc = { param($s) [Uri]::EscapeDataString([string]$s) }
     $release = $null
+    $reused = $false
     try {
-        $release = Invoke-RestMethod -Method Post -Uri "$base/releases" -TimeoutSec 60 -Body @{
-            access_token     = $token
-            tag_name         = $tag
-            name             = $title
-            body             = $body
-            target_commitish = $TargetCommitish
-            prerelease       = "false"
-        }
+        $createBody = "access_token=$token&tag_name=$tag&name=$(& $enc $title)" +
+            "&body=$(& $enc $body)&target_commitish=$(& $enc $TargetCommitish)&prerelease=false"
+        $release = Invoke-RestMethod -Method Post -Uri "$base/releases" -TimeoutSec 60 `
+            -ContentType "application/x-www-form-urlencoded; charset=utf-8" -Body $createBody
         Write-Host "已创建 release id=$($release.id)"
     } catch {
         Write-Host "创建失败（多半是已存在），改为翻列表找 tag=$tag：$($_.Exception.Message)"
@@ -94,30 +95,51 @@ try {
         if (-not $release -or -not $release.id) {
             throw "既创建不了也找不到 tag=$tag 的 release；请检查 token 权限（需要 projects 或 releases 权限）。"
         }
+        $reused = $true
         Write-Host "复用已有 release id=$($release.id)"
     }
 
-    # ---- 上传 APK（PowerShell 5.1 没有 -Form，用 HttpClient 拼 multipart）----
-    Add-Type -AssemblyName System.Net.Http
-    $client = New-Object System.Net.Http.HttpClient
-    $client.Timeout = [TimeSpan]::FromMinutes(5)
-    try {
-        $multipart = New-Object System.Net.Http.MultipartFormDataContent
-        $bytes = [System.IO.File]::ReadAllBytes($apkFile.FullName)
-        # 注意：New-Object 会把 byte[] 拆成多个构造参数，必须用 ::new()
-        $part = [System.Net.Http.ByteArrayContent]::new($bytes)
-        $part.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/octet-stream")
-        $multipart.Add($part, "file", $apkFile.Name)
+    # 复用时要顺带把名称/说明刷成最新的：首次创建时若说明读成乱码，重跑一次就能修好。
+    if ($reused) {
+        try {
+            # Gitee 的 PATCH 把 tag_name / name 当必填项，漏了直接 400（"tag_name is missing"）。
+            $patchBody = "access_token=$token&tag_name=$tag&name=$(& $enc $title)&body=$(& $enc $body)"
+            $release = Invoke-RestMethod -Method Patch -Uri "$base/releases/$($release.id)" -TimeoutSec 60 `
+                -ContentType "application/x-www-form-urlencoded; charset=utf-8" -Body $patchBody
+            Write-Host "已更新发行版名称与说明（$($body.Length) 字符）"
+        } catch {
+            Write-Warning "更新说明失败（附件仍会照传）：$($_.Exception.Message) $($_.ErrorDetails.Message)"
+        }
+    }
 
-        $url = "$base/releases/$($release.id)/attach_files?access_token=$token"
-        $resp = $client.PostAsync($url, $multipart).Result
-        $text = $resp.Content.ReadAsStringAsync().Result
-        if (-not $resp.IsSuccessStatusCode) { throw "上传失败 HTTP $([int]$resp.StatusCode)：$text" }
-        $asset = $text | ConvertFrom-Json
-        Write-Host "已上传：$($asset.name)"
-        Write-Host "直链：$($asset.browser_download_url)"
-    } finally {
-        $client.Dispose()
+    # ---- 上传 APK：已有同名附件就跳过，避免 apk(1).apk ----
+    $existing = @($release.assets) | Where-Object { [string]$_.name -eq $apkFile.Name } | Select-Object -First 1
+    if ($existing) {
+        Write-Host "附件已存在，跳过上传：$($existing.name)"
+        Write-Host "直链：$($existing.browser_download_url)"
+    } else {
+        # PowerShell 5.1 没有 -Form，用 HttpClient 拼 multipart
+        Add-Type -AssemblyName System.Net.Http
+        $client = New-Object System.Net.Http.HttpClient
+        $client.Timeout = [TimeSpan]::FromMinutes(5)
+        try {
+            $multipart = New-Object System.Net.Http.MultipartFormDataContent
+            $bytes = [System.IO.File]::ReadAllBytes($apkFile.FullName)
+            # 注意：New-Object 会把 byte[] 拆成多个构造参数，必须用 ::new()
+            $part = [System.Net.Http.ByteArrayContent]::new($bytes)
+            $part.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse("application/octet-stream")
+            $multipart.Add($part, "file", $apkFile.Name)
+
+            $url = "$base/releases/$($release.id)/attach_files?access_token=$token"
+            $resp = $client.PostAsync($url, $multipart).Result
+            $text = $resp.Content.ReadAsStringAsync().Result
+            if (-not $resp.IsSuccessStatusCode) { throw "上传失败 HTTP $([int]$resp.StatusCode)：$text" }
+            $asset = $text | ConvertFrom-Json
+            Write-Host "已上传：$($asset.name)"
+            Write-Host "直链：$($asset.browser_download_url)"
+        } finally {
+            $client.Dispose()
+        }
     }
 
     Write-Host "`n发行版页面：https://gitee.com/$Owner/$Repo/releases/tag/$tag"
