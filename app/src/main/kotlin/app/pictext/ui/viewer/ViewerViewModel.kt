@@ -77,9 +77,6 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
      */
     private var userForced = false
 
-    /** 双指缩放相对当前档位基准的偏移；×2 档最多 2.0（= ×4），×4 档最多 1.0。 */
-    private var zoom = 1f
-
     /** 最近一次打开的 URI：全局失败页的“重试”用它重走 [open]。 */
     private var lastUris: List<Uri> = emptyList()
 
@@ -132,11 +129,10 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         pages = mutableListOf()
         sessions = mutableListOf()
         lastUris = uris.take(5)
-        // 新的一张图重新回到“自动判断”：档位、缩放偏移、用户强制标记都要归零，
+        // 新的一张图重新回到“自动判断”：档位、用户强制标记都要归零，
         // 否则上一张图点过 ×2 会让这一张一上来就跳过回退判断。
         mode = ViewerMode.REFLOW
         level = ViewerLevel.X2
-        zoom = 1f
         autoLevelApplied = false
         userForced = false
         _state.value = ViewerUiState.Loading
@@ -195,14 +191,11 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
 
     /** 切换底栏档位：原图 / ×2 / ×4。切分方式与档位互相独立。 */
     fun setLevel(newLevel: ViewerLevel) {
-        val levelChanged = level != newLevel
-        // 点同一个档位 = 回到该档的标准倍率（清掉双指缩放留下的偏移）。
-        val zoomChanged = zoom != 1f
-        if (!levelChanged && !zoomChanged) return
-        // 真正改变了档位/倍率才算“用户强制”：后面 replanAll 要跳过自动回退判断。
+        // 重排倍率**只由这三个按钮决定**：双指缩放是纯视觉放大，不再参与规划。
+        if (level == newLevel) return
+        // 真正改变了档位才算“用户强制”：后面 replanAll 要跳过自动回退判断。
         userForced = true
         level = newLevel
-        zoom = 1f
         mode = if (newLevel == ViewerLevel.ORIGINAL) ViewerMode.ORIGINAL else ViewerMode.REFLOW
         val ready = _state.value as? ViewerUiState.Ready
         if (ready != null) {
@@ -213,35 +206,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
-     * 双指缩放：在“×2 ↔ ×4”这条连续轴上移动。
+     * 当前生效的重排倍率 = 档位基准（×2 = 1.0、×4 = 2.0）。
      *
-     * 倍率 = 档位基准 × 手势缩放，范围 [1.0, 2.0]：上限就是 ×4 的基准，因为再往上一条满宽行
-     * 要切 5 段以上，二次重排只能把字号压小，“同页一个字号”就保不住了。
-     * 到达两端时档位一起切过去，底栏高亮才跟得上。
+     * 双指缩放（[ReflowPage]）只做整页视觉放大，**不改变这个值**，也不触发重新规划：
+     * 规划一次要把整页行重新切分、重新算倍率，捏合时每帧跑一遍既卡又会把版面跳来跳去。
      */
-    fun setZoomMultiplier(target: Float) {
-        if (!target.isFinite() || level == ViewerLevel.ORIGINAL) return
-        val m = target.coerceIn(ViewerLevel.MIN_MULTIPLIER, ViewerLevel.MAX_MULTIPLIER)
-        val snapped = when {
-            m >= ViewerLevel.MAX_MULTIPLIER - 0.02f -> ViewerLevel.X4
-            m <= ViewerLevel.MIN_MULTIPLIER + 0.02f -> ViewerLevel.X2
-            else -> level
-        }
-        val newZoom = (m / snapped.baseMultiplier).coerceIn(0.5f, 2f)
-        if (snapped == level && kotlin.math.abs(newZoom - zoom) < 0.01f) return
-        userForced = true
-        level = snapped
-        zoom = newZoom
-        mode = ViewerMode.REFLOW
-        val ready = _state.value as? ViewerUiState.Ready
-        if (ready != null) _state.value = ready.copy(level = snapped, mode = mode)
-        replanAll()
-        publish()
-    }
-
-    /** 当前生效的重排倍率（档位基准 × 双指缩放），规划器与重排页共用。 */
-    fun effectiveMultiplier(): Float =
-        (level.baseMultiplier * zoom).coerceIn(ViewerLevel.MIN_MULTIPLIER, ViewerLevel.MAX_MULTIPLIER)
+    fun effectiveMultiplier(): Float = level.baseMultiplier
 
     fun setCurrentPage(index: Int) {
         val ready = _state.value as? ViewerUiState.Ready ?: return
@@ -313,7 +283,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
         if (entry.failure != null || entry.file == null) return
         if (sessions.getOrNull(index) != null) return
         if (!processing.add(index)) return
-        // 规划参数在主线程读一次再当快照传进后台：`level`/`zoom`/`viewportWidth` 都是
+        // 规划参数在主线程读一次再当快照传进后台：`level`/`viewportWidth` 都是
         // 「主线程写、后台读」的字段，后台直接读既有可见性问题，也让第 2 页看到
         // 第一页刚改过的档位（旧实现就是在这里把 autoLevel 误当成 forceReflow 的）。
         val opts = options()
@@ -421,8 +391,7 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
      * `forceReflow` 只看 [userForced]：首屏按计划结果自动挑档位不算用户意图，
      * 否则第 2 页起会全部跳过硬回退（详见 [userForced] 的注释）。
      *
-     * 双指缩放会把倍率在 [1, 2] 之间连续调整（见 [setZoomMultiplier]）；倍率 > 1 时
-     * 就打开二次重排，段数上限同步放宽到 4。
+     * 倍率只来自底栏按钮（×2 = 1.0、×4 = 2.0）；双指缩放是纯视觉放大，不进这里。
      */
     private fun options(): ReflowOptions {
         val app = getApplication<Application>()

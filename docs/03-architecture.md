@@ -483,23 +483,28 @@ private fun TileImage(session: DocumentSession, index: Int, modifier: Modifier) 
 - 高度用 px → dp 精确换算，**不要** `wrapContent`，否则瓦片之间会出现 1px 缝；
 - 瓦片之间没有 `Arrangement.spacedBy`，间距都烘焙在计划里。
 
-### 6.4b 重排模式的双指缩放
+### 6.4b 重排模式的双指缩放（v1.6：纯视觉放大）
 
-字号是计划的一部分，所以缩放也走“重新规划”而不是缩放画布：
+重排倍率**只由底栏 ×2 / ×4 决定**。双指捏合只把已经排好的画面放大，不重新规划：
 
 ```kotlin
 // ReflowPage：Initial pass 只消费“两指以上”的事件，单指滚动/翻页不受影响
 awaitEachGesture {
     awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-    ... event.calculateZoom() → factor.coerceIn(minFactor, maxFactor) → preview = factor
+    ... event.calculateZoom() → zoom = (zoom * change).coerceIn(1f, 3f)
 }
 ```
 
-- 手势期间 `graphicsLayer(scaleX = preview)` 做临时放大（即时反馈，不重新排版）；
-- 松手后把目标倍率 `(当前倍率 × factor)` 夹到 `[1.0, 2.0]` 交给 ViewModel：
-  `level.baseMultiplier × zoom` 决定 `scaleMultiplier`，`replanAll()` 重新排版；
-- 倍率上限 2.0 = ×4：再往上一条满宽行要切 5 段以上，二次重排只能压小字号；
-- 到达两端时档位一起切过去（1.0 → ×2，2.0 → ×4），底栏高亮才跟得上。
+- `zoom` / `panX` 是页面级状态，**不经过 ViewModel**：不触发 `replanAll()`，不改字号；
+- 每个瓦片的外层高度 = `tileHeight × zoom`，瓦片位图用 `Canvas.drawImage` 按同一倍率画大，
+  所以滚动是 1:1 的（拖动多少像素，内容走多少像素），横向溢出由父 `Box.clipToBounds()` 裁掉；
+- 放大后两指平移修 `panX`（夹在 `[0, 屏宽 × (zoom-1)]`）；缩回 1× 时 `panX` 归零；
+- 放大后**单指拖动也是平移**：横向改 `panX`，纵向用 `listState.dispatchRawDelta(-dy)` 直接推列表（受限手势作用域里不能调 suspend 的 `scrollBy`）；过触摸阈值才接管，单击图块不受影响；
+- 换档位（新计划）时 `LaunchedEffect(page.version)` 把 `zoom` 复位成 1，否则上一档的放大
+  会叠在新版面上；
+- 点击命中要用 `(offset + panX) / zoom` 换回计划坐标，否则放大后点图会点错；
+- 为什么不再“松手重排”：规划一次要重切所有行、重算倍率，捏合时每帧跑既掉帧，
+  又会让字号在手指下反复跳。
 
 ### 6.5 原图模式
 
@@ -748,7 +753,7 @@ ink/mask/游程，4 路会把 1080×20000 的峰值顶到 ~124MB，而收益不�
 **私钥一旦外泄就必须换新 keystore**（私钥在文件里，改口令不能挽回）。
 对外的正式发版建议另配一把新钥匙 + Google Play 的 Play App Signing。
 
-### 14.2 v1-only 发布口径（0.5.2）
+### 14.2 v1-only 发布口径（0.5.3）
 
 v2（版面模型那一套）**只留在 `:core` / `:cli` 做技术验证，不进入发行包**。这条约束由两道
 机检保证，不是靠"记得别引用"：

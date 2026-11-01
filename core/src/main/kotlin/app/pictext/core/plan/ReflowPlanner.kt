@@ -87,8 +87,12 @@ class ReflowPlanner {
         //
         // 统一缩放（P0-4）：整页只能有一个正文倍率，它还受**不参与切分的最宽正文行**约束。
         // 否则那一行会被压到列宽里，字号比同段小一截——审计会直接判 body_scale_inconsistent。
+        //
+        // v1.5：图注也切，但它**不参与定倍率**——图注通栏、半宽又常常比正文半宽更宽，
+        // 让它进 `active` 会把整页 bodyScale 压低，正文替图注买单。
+        val captionSplits = splitLines.filter { it.role == LineRole.CAPTION }
         val emScale = emScale(layout, options)
-        var active = splitLines
+        var active = splitLines.filter { it.role != LineRole.CAPTION }
         var bodyScale = 0f
         for (i in 0 until 4) {
             // 基准倍率一律按“左右两半”算：×4 的 2/4 段是二次重排（见 secondPassBounds），
@@ -104,7 +108,7 @@ class ReflowPlanner {
             if (needed.size == active.size) break
             active = needed
         }
-        val splitLinesUsed = active
+        val splitLinesUsed = active + captionSplits
         if (bodyScale <= 0f) return originalPlan(layout, outW, FallbackReason.NO_TEXT, notes)
         // ×4：在算法算出的倍率上再乘一倍（上限跟着放宽），这就是“在 ×2 基础上再放大”。
         if (options.scaleMultiplier > 1.001f) {
@@ -196,6 +200,13 @@ class ReflowPlanner {
         val blockGap = max((1.6f * lineGap).roundToInt(), (0.45f * outEm).roundToInt())
 
         val bodyRefHeight = max(6f, layout.medianLineHeight) * bodyScale
+        // 图注的倍率天花板：有正文时压在 0.9×bodyScale 以内（图注必须比正文小一档）；
+        // 整页没有正文时不压——那条规则的前提不存在，压了只会让纯图注页更小。
+        val captionCeiling = if (layout.textLines().any { it.role == LineRole.BODY }) {
+            0.9f * bodyScale
+        } else {
+            bodyScale
+        }
         // [v1.2] ×4 = 把 ×2 的输出当一张新图重新排一次：每条 BODY/HEADING 行按新倍率
         // 决定切 2 段还是 4 段，段与段之间用分析期预存的候选字缝。
         // 用户关掉切分（splitEnabled=false）时尊重设置：只放大，不再切行。
@@ -287,7 +298,9 @@ class ReflowPlanner {
                         val isSplit = splitAllowed && headingNeedsSplit
                         if (isSplit && role == LineRole.HEADING) notes.add("heading_split")
                         if (isSplit) {
-                            val scale = bodyScale
+                            // 切开的行按 bodyScale 放大；图注切开后仍然只给 `captionCeiling`，
+                            // 否则“图注比正文小一档”会因为“它被切了”而失效。
+                            val scale = if (role == LineRole.CAPTION) captionCeiling else bodyScale
                             // 按行自己的墨迹范围裁剪两半：版心只是统计量，不是裁剪边界。
                             // 用版心裁会把比版心更宽/更靠左的行切掉一截（真实样例踩过）。
                             // ×4 的 2/4 段由上面的二次重排处理，这里只做 ×2 的左右两半。
@@ -323,7 +336,7 @@ class ReflowPlanner {
                         val targetScale = when (role) {
                             LineRole.BODY -> bodyScale
                             LineRole.HEADING -> min(bodyScale, colW.toFloat() / aw)
-                            LineRole.CAPTION -> min(0.9f * bodyScale, colW.toFloat() / aw)
+                            LineRole.CAPTION -> min(captionCeiling, colW.toFloat() / aw)
                             LineRole.UI -> min(options.uiMaxScale, colW.toFloat() / aw)
                         }
                         addText(

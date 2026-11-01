@@ -78,7 +78,7 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
             return max(3, (1.5f * profile(line).blankRunMedian).toInt())
         }
 
-        val candidates = textLines.filter { it.role == LineRole.BODY || it.role == LineRole.HEADING }
+        val candidates = textLines.filter { it.role != LineRole.UI }
         val longLines = candidates.filter {
             it.band.width >= longLineMinWidth && !latinLike(it)
         }
@@ -127,7 +127,10 @@ class ColumnSplitter(private val options: AnalysisOptions = AnalysisOptions()) {
             val centered = abs((line.band.left - metrics.textLeft) - (metrics.textRight - line.band.right)) <
                 0.06f * pageWidth && (line.band.left - metrics.textLeft) > 0.04f * pageWidth
 
-            val eligibleRole = line.role == LineRole.BODY || line.role == LineRole.HEADING
+            // 角色门：只有 UI 行不许切（头像、按钮、图标行）。BODY / HEADING / CAPTION 都可以切，
+            // 图注（v1.5）也切：通栏图注不切就只能被列宽压着放大（≈原图尺寸），切了才有字号收益；
+            // 它放大后仍由规划器压在 `0.9 × bodyScale` 以内，不会跑到正文之上。
+            val eligibleRole = line.role != LineRole.UI
             // 这一行所属分组：有分组用分组自己的版心与列，孤立行用页面版心与页面列。
             val group = groupOf[line] ?: pageGroup
             val leftAligned = line.band.left <= group.left + inset

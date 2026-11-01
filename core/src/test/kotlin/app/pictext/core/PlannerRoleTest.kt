@@ -175,6 +175,32 @@ class PlannerRoleTest {
         assertTrue("ui=$uiScale", uiScale <= 1.5f + 0.01f)
     }
 
+    /**
+     * v1.5：图注也参与切分。
+     *
+     * 通栏图注不切的话，只能按 `列宽/行宽` 压着放大——在 1080 宽的页面上倍率约等于 1.0，
+     * 看起来和原图一样大。切开后每半段能吃到 `0.9 × bodyScale`，但仍然不许超过它。
+     */
+    @Test
+    fun `caption is split but stays below body scale`() {
+        val lines = listOf(
+            line(20, 44, left = 120, right = 1080),
+            line(60, 84, left = 120, right = 1080),
+            line(100, 124, left = 120, right = 1080),
+            line(140, 160, left = 120, right = 1080, role = LineRole.CAPTION, cut = 600),
+        )
+        val plan = planner.plan(layout(listOf(Block.Paragraph(lines))), ReflowOptions(outputWidth = 1080))
+        val caps = plan.items.filterIsInstance<RenderItem.TextRow>().filter { it.role == LineRole.CAPTION }
+        assertEquals("通栏图注应被切成两段", 2, caps.size)
+        val scales = caps.map { it.dest.width.toFloat() / it.src.width }
+        println("captionScales=$scales bodyScale=${plan.bodyScale}")
+        assertTrue("图注必须真的放大: $scales", scales.all { it > 1.2f })
+        assertTrue(
+            "图注不能超过 0.9×bodyScale: $scales vs ${plan.bodyScale}",
+            scales.all { it <= 0.9f * plan.bodyScale + 0.02f },
+        )
+    }
+
     @Test
     fun `audit is clean on a normal plan`() {
         val lines = listOf(line(20, 44), line(70, 94), line(120, 144))

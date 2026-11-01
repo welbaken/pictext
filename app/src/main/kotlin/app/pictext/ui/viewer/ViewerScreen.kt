@@ -219,7 +219,6 @@ private fun ReadyViewer(
                     viewModel.reportScroll(index, ratio)
                 },
                 onBarsVisible = { visible -> if (index == current) viewModel.setBarsVisible(visible) },
-                onZoom = viewModel::setZoomMultiplier,
                 onFigureClick = { figureItem ->
                     val s = viewModel.sessionAt(index)
                     if (s != null) figure = s.sourceImage to figureItem.src
@@ -314,7 +313,6 @@ private fun PageBody(
     mode: ViewerMode,
     onProgress: (Float) -> Unit,
     onBarsVisible: (Boolean) -> Unit,
-    onZoom: (Float) -> Unit,
     onFigureClick: (app.pictext.core.model.RenderItem.Figure) -> Unit,
     onEmptyTap: () -> Unit,
     onRetry: () -> Unit,
@@ -379,10 +377,8 @@ private fun PageBody(
         ReflowPage(
             session = session,
             page = page,
-            multiplier = page.multiplier,
             onProgress = onProgress,
             onBarsVisible = onBarsVisible,
-            onZoom = onZoom,
             onFigureClick = onFigureClick,
             onEmptyTap = onEmptyTap,
             modifier = Modifier.fillMaxSize(),

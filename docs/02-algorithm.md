@@ -351,7 +351,7 @@ if (band.height > 1.8 × medH) {
 |---|---|---|
 | UI | 实心列组 ≥ 1.0×行高（头像/图标），或最大横向空白 ≥ 2.2×行高（按钮行/工具条），或 ≥3×行高（稀疏图标行） | 1.5× |
 | HEADING | `h/medH ≥ 1.25` 且宽度 ≥ 0.5×页宽 | 见 §12 |
-| CAPTION | `h/medH ≤ 0.80` | 0.9 × bodyScale |
+| CAPTION | `h/medH ≤ 0.80` | 0.9 × bodyScale（切分后仍受此限） |
 | BODY | 其余 | bodyScale |
 
 **为什么 UI 优先**：把头像/按钮行误判成正文并切开，会把图标裁成两半（不可逆）；判成 UI
@@ -477,7 +477,7 @@ cut = median(cut_i)
 
 ```
 候选行 = BODY（和通过同一几何门的 HEADING）
-    role 门：UI / CAPTION 一律不切
+    role 门：UI 一律不切；BODY / HEADING / CAPTION 可切（v1.5 起图注也切）
     版心门：line.left  <= textLeft  + 0.04 × 页宽
             line.right >= textRight - 0.04 × 页宽
             宽度 ≥ (BODY ? 0.50 : 0.72) × 页宽，且不居中
@@ -550,7 +550,7 @@ gain      = bodyScale × k × srcW / outW   // k = analysisScale，见下
 |---|---|---|
 | BODY | `bodyScale` | 通过 §11.3 的门就切 |
 | HEADING | `min(bodyScale, contentW / 标题宽)`；装不下 `bodyScale` 且它是可切行 → 按 BODY 切分并打 `heading_split` | 条件切分 |
-| CAPTION | `min(0.9 × bodyScale, contentW / 行宽)` | 不切 |
+| CAPTION | `min(0.9 × bodyScale, contentW / 段宽)` | 满宽行切半（v1.5） |
 | UI | `min(1.5, contentW / 行宽)` | 不切 |
 | PHOTO | `clamp(contentW / 图宽, 1.0, figMaxScale)` | 不切 |
 | UI 图块 | `min(1.5, contentW / 图宽)` | 不切 |
