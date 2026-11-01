@@ -1,5 +1,8 @@
 # 安装包（0.5.2 · v1-only）
 
+> 线上发行版：<https://gitee.com/noneoneone/pictext/releases/tag/v0.5.2>
+> 直链：<https://gitee.com/noneoneone/pictext/releases/download/v0.5.2/pictext-0.5.2-v1.apk>
+
 | 文件 | 大小 | SHA-256 | 说明 |
 |---|---|---|---|
 | `pictext-0.5.2-v1.apk` | 1,237,696 字节（1.18 MiB） | `661a1373a9775c28f9f49773f3627c33408e9e76c8e31a82a93a31e96db734ef` | **推荐安装**：R8 + 资源裁剪，已签名（APK Signature Scheme v2） |
