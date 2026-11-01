@@ -192,7 +192,13 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
     /** 切换底栏档位：原图 / ×2 / ×4。切分方式与档位互相独立。 */
     fun setLevel(newLevel: ViewerLevel) {
         // 重排倍率**只由这三个按钮决定**：双指缩放是纯视觉放大，不再参与规划。
-        if (level == newLevel) return
+        if (level == newLevel) {
+            // 点当前档位 = 回到该档的标准倍率：倍率没变，但要把双指放大归位。
+            // 归位靠 replanAll() 把 planVersion +1，重排页看到版本变化就会把 zoom/panX 复位。
+            replanAll()
+            publish()
+            return
+        }
         // 真正改变了档位才算“用户强制”：后面 replanAll 要跳过自动回退判断。
         userForced = true
         level = newLevel
@@ -407,9 +413,12 @@ class ViewerViewModel(application: Application) : AndroidViewModel(application) 
             forceReflow = forced,
             scaleMultiplier = multiplier,
             maxSegments = if (multiplier > 1.001f) 4 else 2,
-            // 倍率的基准与档位无关（都受 maxScale=3 约束），最终上限是
-            // maxScale × scaleMultiplier ≤ 6。
-            maxScale = 3f,
+            // 倍率上限必须 ≥ 目标字身，否则高密度屏会把用户选的字号压回去：
+            // 640dpi 上 targetSp=16 → targetEm=64px、sEm≈4.1，而本图 sFit≈3.85；
+            // 上限写死 3 时 1440×2560 上 bodyScale=3.0，正文只占屏宽 78%（实测 73% 墨迹）。
+            // ×2 放到 4 → 由 sFit 定档，正文正好填满列宽；×4 仍收敛在 3，
+            // 二次重排后最终上限 6。
+            maxScale = if (multiplier > 1.001f) 3f else 4f,
         )
     }
 
